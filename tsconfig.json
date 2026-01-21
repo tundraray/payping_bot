@@ -22,24 +22,12 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@app/blockchain": [
-        "libs/blockchain/src"
-      ],
-      "@app/blockchain/*": [
-        "libs/blockchain/src/*"
-      ],
-      "@app/db": [
-        "libs/db/src"
-      ],
-      "@app/db/*": [
-        "libs/db/src/*"
-      ],
-      "@app/telegram": [
-        "libs/telegram/src"
-      ],
-      "@app/telegram/*": [
-        "libs/telegram/src/*"
-      ]
+      "@app/blockchain": ["libs/blockchain/src"],
+      "@app/blockchain/*": ["libs/blockchain/src/*"],
+      "@app/db": ["libs/db/src"],
+      "@app/db/*": ["libs/db/src/*"],
+      "@app/telegram": ["libs/telegram/src"],
+      "@app/telegram/*": ["libs/telegram/src/*"]
     }
   }
 }

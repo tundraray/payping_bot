@@ -1,0 +1,20 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome check
+      glob: "*.{js,ts,json}"
+      run: npx biome check --write {staged_files}
+      stage_fixed: true
+
+    - name: tests
+      run: pnpm test --passWithNoTests
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: npx commitlint --edit {1}
+
+pre-push:
+  jobs:
+    - name: build
+      run: pnpm build

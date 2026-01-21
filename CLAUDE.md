@@ -28,37 +28,43 @@ pnpm run build          # Compile TypeScript to dist/
 pnpm run start:prod     # Run compiled code from dist/
 
 # Testing
-pnpm run test           # Run unit tests (*.spec.ts files in src/)
+pnpm run test           # Run unit tests (*.spec.ts files)
 pnpm run test:watch     # Watch mode for tests
-pnpm run test -- --testPathPattern="app.controller" # Run specific test file
-pnpm run test:e2e       # Run e2e tests (test/*.e2e-spec.ts)
 pnpm run test:cov       # Generate coverage report
 
-# Code quality
-pnpm run lint           # ESLint with auto-fix
-pnpm run format         # Prettier formatting
+# Code quality (Biome - linting + formatting)
+pnpm run lint           # Biome check with auto-fix
+pnpm run format         # Biome format only
+pnpm run check          # Biome check without auto-fix
 ```
 
 ## Architecture
 
-This is a NestJS application structured with standard module/controller/service patterns:
+This is a NestJS **standalone application** (no HTTP server) for a Telegram bot:
 
-- `src/main.ts` - Application bootstrap, creates NestJS app on port 3000 (or PORT env)
+- `src/main.ts` - Application bootstrap using `NestFactory.createApplicationContext()`
 - `src/app.module.ts` - Root module that imports all feature modules
-- Feature modules follow NestJS conventions: `*.module.ts`, `*.controller.ts`, `*.service.ts`
+- Feature modules follow NestJS conventions: `*.module.ts`, `*.service.ts`
 - Unit tests are co-located with source files as `*.spec.ts`
-- E2E tests live in `test/` directory as `*.e2e-spec.ts`
 
 **Planned architecture (not yet implemented):**
-- Bot module: grammY-based Telegram bot handlers, webhook endpoint
+- Bot module: grammY-based Telegram bot handlers (long polling)
 - Subscription module: Telegram Stars payment processing, expiration tracking
 - Wallet module: TronGrid polling service (3-5 second intervals), transaction deduplication by tx hash
 - Notification module: Alert delivery to active subscribers
 
 ## Code Style
 
-- ESLint with TypeScript support and Prettier integration
-- Single quotes, trailing commas (`'singleQuote': true, 'trailingComma': 'all'`)
+- **Biome** for linting and formatting (replaces ESLint + Prettier)
+- Single quotes, trailing commas
 - TypeScript target: ES2023 with NodeNext modules
-- `@typescript-eslint/no-explicit-any` is disabled
 - `strictNullChecks` enabled, but `noImplicitAny` is off
+
+## Git Hooks (Lefthook)
+
+- **pre-commit**: Biome check + tests (parallel)
+- **commit-msg**: commitlint (conventional commits)
+- **pre-push**: Build
+
+Commit message format: `type(scope): description`
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
