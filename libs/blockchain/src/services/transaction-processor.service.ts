@@ -63,6 +63,53 @@ export class TransactionProcessorService {
   }
 
   /**
+   * Process multiple USDT transactions.
+   * Filters, deduplicates, and emits events for new incoming transactions.
+   *
+   * @param transactions - Array of transactions to process
+   * @param walletAddress - The monitored wallet address
+   * @returns Count of processed and skipped transactions
+   */
+  async processUSDTTransactions(
+    transactions: Transaction[],
+    walletAddress: string,
+  ): Promise<{ processed: number; skipped: number }> {
+    let processed = 0;
+    let skipped = 0;
+
+    for (const transaction of transactions) {
+      const isIncoming = this.isIncomingTransaction(transaction, walletAddress);
+
+      if (!isIncoming) {
+        skipped++;
+        this.logger.debug(
+          `Skipping non-incoming transaction: ${transaction.hash.substring(0, 16)}...`,
+        );
+        continue;
+      }
+
+      const isDuplicate = await this.deduplicationService.isDuplicate(transaction.hash);
+
+      if (isDuplicate) {
+        skipped++;
+        this.logger.debug(
+          `Skipping duplicate transaction: ${transaction.hash.substring(0, 16)}...`,
+        );
+        continue;
+      }
+
+      // Emit event for new transaction (AC-5.3: log error and continue on failure)
+      this.emitTransactionEvent(transaction);
+
+      // Mark as processed (persist to cache + DB)
+      await this.deduplicationService.markProcessed(transaction.hash, transaction);
+      processed++;
+    }
+
+    return { processed, skipped };
+  }
+
+  /**
    * Check if transaction is incoming (to_address = wallet).
    * Address comparison is case-insensitive (TRON addresses can vary in case).
    *
