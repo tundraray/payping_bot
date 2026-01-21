@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-// biome-ignore lint/style/useImportType: ConfigService is used for NestJS DI, not just as a type
 import { ConfigService } from '@nestjs/config';
 import axios, { type AxiosError } from 'axios';
 import type { BlockchainConfig } from '../config/blockchain.config';
