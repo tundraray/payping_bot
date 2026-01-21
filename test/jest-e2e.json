@@ -11,6 +11,8 @@
     "^.+\\.(t|j)s$": "ts-jest"
   },
   "moduleNameMapper": {
-    "^@app/db(|/.*)$": "<rootDir>/../libs/db/src/$1"
+    "^@app/blockchain(|/.*)$": "<rootDir>/../libs/blockchain/src/$1",
+    "^@app/db(|/.*)$": "<rootDir>/../libs/db/src/$1",
+    "^@app/telegram(|/.*)$": "<rootDir>/../libs/telegram/src/$1"
   }
 }

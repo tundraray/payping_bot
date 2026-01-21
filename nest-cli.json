@@ -7,6 +7,15 @@
     "webpack": true
   },
   "projects": {
+    "blockchain": {
+      "type": "library",
+      "root": "libs/blockchain",
+      "entryFile": "index",
+      "sourceRoot": "libs/blockchain/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/blockchain/tsconfig.lib.json"
+      }
+    },
     "db": {
       "type": "library",
       "root": "libs/db",
@@ -14,6 +23,15 @@
       "sourceRoot": "libs/db/src",
       "compilerOptions": {
         "tsConfigPath": "libs/db/tsconfig.lib.json"
+      }
+    },
+    "telegram": {
+      "type": "library",
+      "root": "libs/telegram",
+      "entryFile": "index",
+      "sourceRoot": "libs/telegram/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/telegram/tsconfig.lib.json"
       }
     }
   }
