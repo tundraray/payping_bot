@@ -13,6 +13,7 @@ describe('blockchainConfig', () => {
     delete process.env.POLLING_INTERVAL_MS;
     delete process.env.POLLING_ENABLED;
     delete process.env.POLLING_FALLBACK_WINDOW_MS;
+    delete process.env.POLLING_MAX_PAGES;
     delete process.env.LRU_CACHE_SIZE;
     delete process.env.LRU_CACHE_TTL_MS;
     delete process.env.BACKOFF_INITIAL_MS;
@@ -40,7 +41,8 @@ describe('blockchainConfig', () => {
 
       expect(config.polling.intervalMs).toBe(5000);
       expect(config.polling.enabled).toBe(true);
-      expect(config.polling.fallbackWindowMs).toBe(60000);
+      expect(config.polling.fallbackWindowMs).toBe(63072000000); // 2 years in ms
+      expect(config.polling.maxPages).toBe(100);
     });
 
     it('should return default lruCache configuration', () => {
@@ -83,12 +85,14 @@ describe('blockchainConfig', () => {
       process.env.POLLING_INTERVAL_MS = '3000';
       process.env.POLLING_ENABLED = 'false';
       process.env.POLLING_FALLBACK_WINDOW_MS = '120000';
+      process.env.POLLING_MAX_PAGES = '50';
 
       const config = blockchainConfig() as BlockchainConfig;
 
       expect(config.polling.intervalMs).toBe(3000);
       expect(config.polling.enabled).toBe(false);
       expect(config.polling.fallbackWindowMs).toBe(120000);
+      expect(config.polling.maxPages).toBe(50);
     });
 
     it('should override lruCache settings from environment', () => {

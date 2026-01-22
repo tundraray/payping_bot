@@ -149,13 +149,14 @@ export class TransactionPollerService implements OnModuleDestroy {
 
   /**
    * Get initial timestamp for polling.
-   * Queries database for last transaction, falls back to now - fallbackWindowMs.
+   * Priority: 1) DB last transaction, 2) Wallet creation date, 3) now - 2 years
    *
    * @implements AC-10.1 - Query DB for last transaction timestamp on start
-   * @implements AC-10.2 - Fallback to now-60s when no DB data
+   * @implements AC-10.2 - Fallback to wallet creation date, then now - 2 years
    * @implements AC-10.3 - Continue from last saved timestamp on restart
    */
   private async getInitialTimestamp(): Promise<number> {
+    // Step 1: Try database for last transaction timestamp
     const dbTimestamp = await this.transactionsService.getLastTimestamp();
 
     if (dbTimestamp !== null) {
@@ -163,10 +164,25 @@ export class TransactionPollerService implements OnModuleDestroy {
       return dbTimestamp;
     }
 
-    // AC-10.2: Fallback to now - fallbackWindowMs
-    const fallbackTimestamp = Date.now() - this.config.polling.fallbackWindowMs;
+    // Step 2: Try wallet creation date from TronGrid
+    if (this.walletAddress) {
+      const creationTimestamp = await this.tronGridClient.getAccountCreationTimestamp(
+        this.walletAddress,
+      );
+
+      if (creationTimestamp !== null) {
+        this.logger.log(
+          `No DB data, using wallet creation date: ${new Date(creationTimestamp).toISOString()}`,
+        );
+        return creationTimestamp;
+      }
+    }
+
+    // Step 3: Final fallback - now minus 2 years
+    const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+    const fallbackTimestamp = Date.now() - TWO_YEARS_MS;
     this.logger.log(
-      `No DB data, using fallback timestamp: ${new Date(fallbackTimestamp).toISOString()}`,
+      `No DB data and no wallet creation date, using fallback: ${new Date(fallbackTimestamp).toISOString()}`,
     );
     return fallbackTimestamp;
   }
@@ -230,7 +246,7 @@ export class TransactionPollerService implements OnModuleDestroy {
         this.lastPollTimestamp = this.getLatestTimestamp(transactions);
 
         this.logger.log(
-          `Poll complete: ${transactions.length} fetched, ${result.processed} processed, ${result.skipped} skipped`,
+          `Poll complete: ${transactions.length} fetched, ${result.processed} saved, ${result.notified} notified, ${result.skipped} skipped`,
         );
       }
 

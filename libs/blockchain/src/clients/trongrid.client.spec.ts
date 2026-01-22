@@ -17,6 +17,9 @@ describe('TronGridClient', () => {
       apiKey: 'test-api-key',
       timeoutMs: 10000,
     },
+    polling: {
+      maxPages: 100,
+    },
     backoff: {
       initialMs: 100,
       maxMs: 1000,
@@ -300,6 +303,88 @@ describe('TronGridClient', () => {
 
       // Initial backoff is 100ms + jitter (0-50ms), so should be at least 100ms
       expect(elapsed).toBeGreaterThanOrEqual(100);
+    });
+  });
+
+  // ===========================================================================
+  // getAccountCreationTimestamp Tests
+  // ===========================================================================
+  describe('getAccountCreationTimestamp', () => {
+    it('should return account creation timestamp on success', async () => {
+      const mockResponse = {
+        data: {
+          data: [
+            {
+              create_time: 1609459200000, // 2021-01-01 00:00:00 UTC
+              address: 'TTestWallet123456789012345678901234',
+              balance: 1000000,
+            },
+          ],
+          success: true,
+        },
+      };
+
+      mockedAxios.get.mockResolvedValueOnce(mockResponse);
+
+      const result = await client.getAccountCreationTimestamp('TTestWallet');
+
+      expect(result).toBe(1609459200000);
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        `${mockConfig.trongrid.baseUrl}/v1/accounts/TTestWallet`,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'TRON-PRO-API-KEY': 'test-api-key',
+          }),
+          timeout: 10000,
+        }),
+      );
+    });
+
+    it('should return null when account not found (empty data)', async () => {
+      const mockResponse = {
+        data: {
+          data: [],
+          success: true,
+        },
+      };
+
+      mockedAxios.get.mockResolvedValueOnce(mockResponse);
+
+      const result = await client.getAccountCreationTimestamp('TTestWallet');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null when response success is false', async () => {
+      const mockResponse = {
+        data: {
+          data: [],
+          success: false,
+        },
+      };
+
+      mockedAxios.get.mockResolvedValueOnce(mockResponse);
+
+      const result = await client.getAccountCreationTimestamp('TTestWallet');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null on API error without throwing', async () => {
+      mockedAxios.get.mockRejectedValueOnce(new Error('Network error'));
+
+      const result = await client.getAccountCreationTimestamp('TTestWallet');
+
+      expect(result).toBeNull();
+    });
+
+    it('should return null on HTTP error without throwing', async () => {
+      const serverError = { response: { status: 500 }, message: 'Server error' };
+      mockedAxios.get.mockRejectedValueOnce(serverError);
+
+      const result = await client.getAccountCreationTimestamp('TTestWallet');
+
+      expect(result).toBeNull();
     });
   });
 

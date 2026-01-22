@@ -19,6 +19,24 @@ export interface TronGridPaginatedResponse<T> {
 }
 
 /**
+ * Account info response from TronGrid API
+ * Returned by GET /v1/accounts/{address}
+ */
+export interface TronGridAccountResponse {
+  /** Array containing account data (usually single element) */
+  data: Array<{
+    /** Account creation timestamp in milliseconds */
+    create_time: number;
+    /** Account address in base58 format */
+    address: string;
+    /** Account balance in SUN (1 TRX = 1,000,000 SUN) */
+    balance?: number;
+  }>;
+  /** Whether the request was successful */
+  success: boolean;
+}
+
+/**
  * TRC20 transaction response from TronGrid API
  * Represents a single TRC20 token transfer
  */

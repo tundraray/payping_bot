@@ -21,8 +21,10 @@ export interface BlockchainConfig {
     intervalMs: number;
     /** Enable/disable polling */
     enabled: boolean;
-    /** Fallback lookback window when no DB data exists (milliseconds) */
+    /** Fallback lookback window when no DB data AND no wallet creation date (milliseconds, default: 2 years) */
     fallbackWindowMs: number;
+    /** Maximum pages to fetch per poll cycle to prevent infinite loops (default: 100) */
+    maxPages: number;
   };
   /** LRU cache settings for transaction deduplication */
   lruCache: {
@@ -59,7 +61,8 @@ export interface BlockchainConfig {
  * - TRONGRID_TIMEOUT_MS: Request timeout (default: 10000)
  * - POLLING_INTERVAL_MS: Polling interval (default: 5000)
  * - POLLING_ENABLED: Enable polling (default: true)
- * - POLLING_FALLBACK_WINDOW_MS: Fallback lookback window (default: 60000)
+ * - POLLING_FALLBACK_WINDOW_MS: Fallback lookback window (default: 63072000000 = 2 years)
+ * - POLLING_MAX_PAGES: Max pages per poll cycle (default: 100)
  * - LRU_CACHE_SIZE: Max cache entries (default: 10000)
  * - LRU_CACHE_TTL_MS: Cache entry TTL (default: 3600000)
  * - BACKOFF_INITIAL_MS: Initial backoff (default: 1000)
@@ -79,7 +82,8 @@ export default registerAs(
     polling: {
       intervalMs: parseInt(process.env.POLLING_INTERVAL_MS || '5000', 10),
       enabled: process.env.POLLING_ENABLED !== 'false',
-      fallbackWindowMs: parseInt(process.env.POLLING_FALLBACK_WINDOW_MS || '60000', 10),
+      fallbackWindowMs: parseInt(process.env.POLLING_FALLBACK_WINDOW_MS || '63072000000', 10),
+      maxPages: parseInt(process.env.POLLING_MAX_PAGES || '100', 10),
     },
     lruCache: {
       maxSize: parseInt(process.env.LRU_CACHE_SIZE || '10000', 10),

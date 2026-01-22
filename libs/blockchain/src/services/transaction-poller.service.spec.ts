@@ -66,6 +66,7 @@ describe('TransactionPollerService Integration Tests', () => {
           provide: TronGridClient,
           useValue: {
             fetchUSDTTransactions: jest.fn(),
+            getAccountCreationTimestamp: jest.fn(),
           },
         },
         {
@@ -161,12 +162,13 @@ describe('TransactionPollerService Integration Tests', () => {
      * @complexity medium
      * @covers AC-10.2
      */
-    it('should use fallback timestamp (now - 60s) when no DB data', async () => {
+    it('should use wallet creation date when no DB data', async () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
-      const now = Date.now();
+      const walletCreationTimestamp = 1609459200000; // 2021-01-01 00:00:00 UTC
 
       transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
       transactionsService.getLastTimestamp.mockResolvedValue(null);
+      tronGridClient.getAccountCreationTimestamp.mockResolvedValue(walletCreationTimestamp);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
       processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
 
@@ -174,14 +176,42 @@ describe('TransactionPollerService Integration Tests', () => {
       jest.advanceTimersByTime(100);
       await Promise.resolve();
 
-      // Should use fallback: now - fallbackWindowMs (60000)
+      // Should use wallet creation timestamp
+      expect(tronGridClient.getAccountCreationTimestamp).toHaveBeenCalledWith(walletAddress);
+      expect(tronGridClient.fetchUSDTTransactions).toHaveBeenCalledWith(
+        walletAddress,
+        walletCreationTimestamp,
+      );
+    });
+
+    /**
+     * @category core-functionality
+     * @complexity medium
+     * @covers AC-10.2
+     */
+    it('should use now - 2 years fallback when no DB data and wallet creation fails', async () => {
+      const walletAddress = 'TMonitoredWallet12345678901234567890';
+      const now = Date.now();
+      const TWO_YEARS_MS = 2 * 365 * 24 * 60 * 60 * 1000;
+
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(null);
+      tronGridClient.getAccountCreationTimestamp.mockResolvedValue(null);
+      tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
+      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+
+      await service.startPolling();
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+
+      // Should use fallback: now - 2 years
       expect(tronGridClient.fetchUSDTTransactions).toHaveBeenCalledWith(
         walletAddress,
         expect.any(Number),
       );
 
       const calledTimestamp = tronGridClient.fetchUSDTTransactions.mock.calls[0][1];
-      const expectedFallback = now - mockConfig.polling.fallbackWindowMs;
+      const expectedFallback = now - TWO_YEARS_MS;
 
       // Allow some tolerance for timing
       expect(calledTimestamp).toBeGreaterThanOrEqual(expectedFallback - 1000);

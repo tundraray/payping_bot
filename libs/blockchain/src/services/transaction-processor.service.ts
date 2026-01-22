@@ -5,15 +5,18 @@ import type { Transaction, TransactionNewEvent } from '../interfaces/transaction
 import { DeduplicationService } from './deduplication.service';
 
 /**
- * Service for processing incoming blockchain transactions.
+ * Service for processing blockchain transactions.
  *
  * Responsibilities:
- * - Filter incoming transactions (to_address = monitored wallet)
+ * - Save ALL transactions (incoming + outgoing) to database for audit/history
+ * - Emit 'transaction.new' events ONLY for incoming transactions
  * - Deduplicate transactions using DeduplicationService
- * - Emit 'transaction.new' events for new transactions
  * - Handle event emission failures gracefully (log and continue)
  *
- * @implements AC-3.1, AC-3.2, AC-5.1, AC-5.2, AC-5.3
+ * @implements AC-3.1 - Save all transactions to database
+ * @implements AC-3.2 - Emit events only for incoming transactions
+ * @implements AC-3.3 - Outgoing transactions saved but no event emitted
+ * @implements AC-5.1, AC-5.2, AC-5.3 - Event emission
  */
 @Injectable()
 export class TransactionProcessorService {
@@ -64,30 +67,25 @@ export class TransactionProcessorService {
 
   /**
    * Process multiple USDT transactions.
-   * Filters, deduplicates, and emits events for new incoming transactions.
+   * Saves ALL transactions to database, emits events only for incoming.
    *
    * @param transactions - Array of transactions to process
    * @param walletAddress - The monitored wallet address
-   * @returns Count of processed and skipped transactions
+   * @returns Count of saved, notified (incoming), and skipped (duplicate) transactions
+   *
+   * @implements AC-3.1 - Save all transactions to database
+   * @implements AC-3.2 - Emit events only for incoming transactions
+   * @implements AC-3.3 - Outgoing transactions saved but no event emitted
    */
   async processUSDTTransactions(
     transactions: Transaction[],
     walletAddress: string,
-  ): Promise<{ processed: number; skipped: number }> {
+  ): Promise<{ processed: number; skipped: number; notified: number }> {
     let processed = 0;
     let skipped = 0;
+    let notified = 0;
 
     for (const transaction of transactions) {
-      const isIncoming = this.isIncomingTransaction(transaction, walletAddress);
-
-      if (!isIncoming) {
-        skipped++;
-        this.logger.debug(
-          `Skipping non-incoming transaction: ${transaction.hash.substring(0, 16)}...`,
-        );
-        continue;
-      }
-
       const isDuplicate = await this.deduplicationService.isDuplicate(transaction.hash);
 
       if (isDuplicate) {
@@ -98,15 +96,26 @@ export class TransactionProcessorService {
         continue;
       }
 
-      // Emit event for new transaction (AC-5.3: log error and continue on failure)
-      this.emitTransactionEvent(transaction);
-
-      // Mark as processed (persist to cache + DB)
+      // AC-3.1: Save ALL transactions (incoming + outgoing) to database
       await this.deduplicationService.markProcessed(transaction.hash, transaction);
       processed++;
+
+      // AC-3.2/AC-3.3: Emit event ONLY for incoming transactions
+      const isIncoming = this.isIncomingTransaction(transaction, walletAddress);
+      if (isIncoming) {
+        this.emitTransactionEvent(transaction);
+        notified++;
+        this.logger.debug(
+          `Saved and notified incoming transaction: ${transaction.hash.substring(0, 16)}...`,
+        );
+      } else {
+        this.logger.debug(
+          `Saved outgoing transaction (no notification): ${transaction.hash.substring(0, 16)}...`,
+        );
+      }
     }
 
-    return { processed, skipped };
+    return { processed, skipped, notified };
   }
 
   /**
