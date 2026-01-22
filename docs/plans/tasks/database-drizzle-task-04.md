@@ -16,44 +16,44 @@ Create Data Transfer Object (DTO) type definitions for service method inputs. Th
 3. `CreatePaymentDto` - For payment recording
 
 ## Target Files
-- [ ] libs/db/src/types/dto.ts
+- [x] libs/db/src/types/dto.ts
 
 ## Implementation Steps
 
 ### 1. Create types Directory
-- [ ] Create directory: `libs/db/src/types/`
+- [x] Create directory: `libs/db/src/types/`
 
 ### 2. Define User DTOs
-- [ ] Create CreateUserDto interface:
+- [x] Create CreateUserDto interface:
   - telegramId: number (required)
   - username?: string | null (optional)
   - firstName?: string | null (optional)
   - lastName?: string | null (optional)
-- [ ] Create UpdateUserDto interface:
+- [x] Create UpdateUserDto interface:
   - username?: string | null (optional)
   - firstName?: string | null (optional)
   - lastName?: string | null (optional)
-- [ ] Reference Design Doc DTO type definitions section
+- [x] Reference Design Doc DTO type definitions section
 
 ### 3. Define Payment DTO
-- [ ] Create CreatePaymentDto interface:
+- [x] Create CreatePaymentDto interface:
   - userId: number (required)
   - telegramPaymentChargeId: string (required)
   - amount: number (required)
   - currency?: string (optional, defaults to 'XTR')
   - status: 'pending' | 'completed' | 'failed' | 'refunded' (required)
-- [ ] Reference Design Doc DTO type definitions section
+- [x] Reference Design Doc DTO type definitions section
 
 ### 4. Verify Type Exports
-- [ ] Export all three DTO interfaces
-- [ ] Ensure types match service method signatures in Design Doc
+- [x] Export all three DTO interfaces
+- [x] Ensure types match service method signatures in Design Doc
 
 ## Completion Criteria
-- [ ] dto.ts file created with all three DTO interfaces
-- [ ] All DTO properties match Design Doc specifications
-- [ ] File compiles without TypeScript errors
-- [ ] `pnpm run build` succeeds
-- [ ] Operation verified: L3 (Build Success) - types can be imported by services
+- [x] dto.ts file created with all three DTO interfaces
+- [x] All DTO properties match Design Doc specifications
+- [x] File compiles without TypeScript errors
+- [x] `pnpm run build` succeeds
+- [x] Operation verified: L3 (Build Success) - types can be imported by services
 
 ## Notes
 - Impact scope: Type definitions only, no runtime code

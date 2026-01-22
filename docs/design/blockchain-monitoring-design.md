@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document defines the technical design for TRON blockchain monitoring within the PayPing Telegram bot. The implementation monitors a single TRON wallet for incoming USDT (TRC20) transactions using the TronGrid API with 5-second polling intervals, emitting events for downstream notification services.
+This document defines the technical design for TRON blockchain monitoring within the PayPing Telegram bot. The implementation monitors a single TRON wallet for USDT (TRC20) transactions using the TronGrid API with 5-second polling intervals. All transactions (both incoming and outgoing) are saved to the database for audit/history purposes, while events are emitted only for incoming transactions to trigger downstream notification services.
 
 ## Design Summary (Meta)
 
@@ -11,24 +11,27 @@ design_type: "new_feature"
 risk_level: "low"
 complexity_level: "low"
 complexity_rationale: >
-  (1) Requirements: USDT TRC20 transaction monitoring only (single endpoint),
+  (1) Requirements: USDT TRC20 transaction monitoring (single endpoint with pagination),
       two-tier deduplication (LRU + PostgreSQL), graceful shutdown with inflight request handling,
-      and rate limit management with exponential backoff.
+      rate limit management with exponential backoff, and all transactions saved (events for incoming only).
   (2) Constraints/risks addressed: TronGrid free tier limits (100K/day, 15 QPS),
-      API error resilience, and observability requirements.
-  Scope narrowed from v1.0: removed TRX native transfer monitoring.
+      API error resilience, pagination handling, and observability requirements.
+  Scope evolved: v1.0 → v1.1 (USDT only) → v1.2 (DB timestamp) → v1.3 (all txs, pagination, sorting).
 main_constraints:
   - "TronGrid free tier: 100K requests/day, 15 QPS"
   - "5-second polling interval requirement"
   - "NestJS standalone application (no HTTP server)"
   - "PostgreSQL for persistence"
+  - "Save all transactions (incoming + outgoing) for audit"
 biggest_risks:
   - "TronGrid API availability/rate limiting under load"
   - "Transaction deduplication edge cases during restart"
   - "Memory pressure from LRU cache under high transaction volume"
+  - "Pagination may increase API calls during large time gaps"
 unknowns:
   - "TronGrid API response time under TRON network congestion"
   - "Optimal LRU cache size for production load"
+  - "Typical page count for 2-year historical fetch"
 ```
 
 ## Background and Context
@@ -42,7 +45,11 @@ unknowns:
 #### Scope
 - [x] Poll TronGrid API every 5 seconds for new transactions
 - [x] Monitor USDT TRC20 transfers only (via `/v1/accounts/{address}/transactions/trc20`)
-- [x] Track incoming transactions only
+- [x] Download ALL transactions (both incoming and outgoing) for audit/history
+- [x] Save ALL transactions to database
+- [x] Emit notifications (events) ONLY for incoming transactions
+- [x] Support pagination when fetching transactions from TronGrid API
+- [x] Process transactions chronologically (oldest first)
 - [x] Deduplicate transactions using in-memory LRU cache
 - [x] Persist transactions to PostgreSQL for long-term deduplication
 - [x] Emit events for new transactions via NestJS EventEmitter
@@ -50,7 +57,7 @@ unknowns:
 - [x] Implement exponential backoff on errors
 - [x] Support graceful shutdown
 - [x] On polling start, retrieve timestamp of last saved transaction from database
-- [x] If no transactions in database, use (now - 60000ms) as fallback
+- [x] If no transactions in database, use fallback chain: wallet creation date from TronGrid, or (now - 2 years)
 
 #### Non-Scope (Explicitly not changing)
 - [x] HTTP server implementation (standalone application)
@@ -59,7 +66,6 @@ unknowns:
 - [x] Database schema design (separate concern)
 - [x] Multiple wallet monitoring (single wallet only for MVP)
 - [x] TRX native transfer monitoring (removed from scope)
-- [x] Outgoing transaction monitoring (only incoming USDT tracked)
 
 #### Constraints
 - [x] Parallel operation: No (single polling loop)
@@ -85,14 +91,14 @@ PayPing needs to detect incoming USDT (TRC20) transactions on a TRON wallet in n
 |----|-------------|----------|
 | FR-1 | Poll TronGrid API every 5 seconds | Must |
 | FR-2 | Monitor USDT (TRC20) transfers only | Must |
-| FR-3 | Track incoming transactions only | Must |
+| FR-3 | Download all transactions, emit events for incoming only | Must |
 | FR-4 | Deduplicate by transaction hash (LRU + PostgreSQL) | Must |
 | FR-5 | Emit events for new transactions | Must |
 | FR-6 | Load wallet address from database | Must |
 | FR-7 | Handle API errors with exponential backoff | Must |
 | FR-8 | Support graceful shutdown | Must |
 | FR-9 | Configurable via environment variables | Must |
-| FR-10 | On polling start, retrieve last transaction timestamp from database (fallback: now - 60000ms) | Must |
+| FR-10 | On polling start, retrieve last transaction timestamp from database (fallback: wallet creation date or now - 2 years) | Must |
 
 #### Non-Functional Requirements
 
@@ -117,11 +123,16 @@ PayPing needs to detect incoming USDT (TRC20) transactions on a TRON wallet in n
 - [x] **AC-2.3**: The system shall request only confirmed transactions (`only_confirmed=true`)
 - [x] **AC-2.4**: The system shall filter transactions using `min_timestamp` parameter to reduce data transfer
 - [x] **AC-2.5**: **If** the API returns an error, **then** the system shall retry with exponential backoff
+- [x] **AC-2.6**: The system shall support pagination using TronGrid's `fingerprint` parameter
+- [x] **AC-2.7**: The system shall fetch all pages until no more data is available (no `fingerprint` in response)
+- [x] **AC-2.8**: The system shall request transactions sorted by `block_timestamp,asc` (oldest first) for chronological processing *(API verified: TronGrid supports `order_by` parameter)*
+- [x] **AC-2.9**: The system shall limit pagination to a maximum number of pages (configurable, default: 100) to prevent infinite loops
 
-### FR-3: Incoming Transaction Filtering
+### FR-3: Transaction Download and Event Emission
 
-- [x] **AC-3.1**: The system shall process only transactions where `to_address` matches the monitored wallet
-- [x] **AC-3.2**: The system shall ignore outgoing transactions (where `from_address` matches monitored wallet)
+- [x] **AC-3.1**: The system shall save ALL transactions (both incoming and outgoing) to the database for audit/history
+- [x] **AC-3.2**: The system shall emit events ONLY for incoming transactions (where `to_address` matches the monitored wallet)
+- [x] **AC-3.3**: Outgoing transactions (where `from_address` matches monitored wallet) shall be saved but NOT trigger event emission
 
 ### FR-4: Transaction Deduplication
 
@@ -164,7 +175,9 @@ PayPing needs to detect incoming USDT (TRC20) transactions on a TRON wallet in n
 ### FR-10: Initial Polling Timestamp from Database
 
 - [x] **AC-10.1**: **When** polling starts, the system shall query the database for the timestamp of the last saved transaction
-- [x] **AC-10.2**: **If** no transactions exist in the database, **then** the system shall use `min_timestamp = now - 60000ms` as fallback
+- [x] **AC-10.2**: **If** no transactions exist in the database, **then** the system shall use a fallback chain:
+  - Primary fallback: Query TronGrid API for wallet creation date (`getAccountCreationTimestamp`) *(API verified: `/v1/accounts/{address}` returns `create_time` in milliseconds)*
+  - Secondary fallback: If wallet creation date unavailable, use `min_timestamp = now - 63072000000ms` (2 years)
 - [x] **AC-10.3**: **When** restarting after downtime, the system shall continue from the last saved transaction timestamp
 - [x] **AC-10.4**: The system shall NOT skip transactions that occurred during downtime
 - [x] **AC-10.5**: **After** the first poll, subsequent polls shall use the timestamp of the last processed transaction as `min_timestamp`
@@ -286,22 +299,45 @@ sequenceDiagram
     alt Polling in progress
         Poller->>Poller: Skip, log warning
     else Ready to poll
-        Note over Poller: First poll: Query DB for last tx timestamp
+        Note over Poller: First poll: Determine minTimestamp
         Poller->>DB: getLastTransactionTimestamp()
         alt Transactions exist in DB
             DB-->>Poller: lastTimestamp
             Note over Poller: minTimestamp = lastTimestamp
         else No transactions in DB
             DB-->>Poller: null
-            Note over Poller: Fallback: minTimestamp = now - 60s
+            Poller->>Client: getAccountCreationTimestamp(address)
+            Client->>TG: GET /v1/accounts/{address}
+            alt Account info available
+                TG-->>Client: account data with create_time
+                Client-->>Poller: creationTimestamp
+                Note over Poller: minTimestamp = creationTimestamp
+            else Account info unavailable
+                TG-->>Client: null/error
+                Client-->>Poller: null
+                Note over Poller: Fallback: minTimestamp = now - 2 years
+            end
         end
-        Poller->>Client: fetchUSDTTransactions(address, minTimestamp)
-        Client->>TG: GET /v1/accounts/{address}/transactions/trc20
-        TG-->>Client: USDT transactions
-        Client-->>Poller: USDT transactions
 
-        loop For each incoming transaction (to_address = wallet)
-            Poller->>Processor: process(transaction)
+        Poller->>Client: fetchUSDTTransactions(address, minTimestamp)
+
+        rect rgb(240, 248, 255)
+            Note over Client,TG: Pagination Loop (handled internally by Client)
+            loop Fetch all pages
+                Client->>TG: GET /v1/accounts/{address}/transactions/trc20<br/>?order_by=block_timestamp,asc&fingerprint={fp}
+                TG-->>Client: USDT transactions (page) + fingerprint
+                Note over Client: Accumulate transactions
+                alt Has fingerprint
+                    Note over Client: Continue to next page
+                else No fingerprint
+                    Note over Client: All pages fetched
+                end
+            end
+        end
+        Client-->>Poller: All USDT transactions (sorted asc, oldest first)
+
+        loop For each transaction (ALL - both incoming and outgoing)
+            Poller->>Processor: process(transaction, walletAddress)
             Processor->>Dedup: isDuplicate(hash)
             Dedup->>LRU: has(hash)
             alt In LRU cache
@@ -320,7 +356,14 @@ sequenceDiagram
                     Processor->>Dedup: markProcessed(hash, tx)
                     Dedup->>LRU: set(hash)
                     Dedup->>DB: insert(tx)
-                    Processor->>Events: emit('transaction.new', tx)
+                    Note over Processor: Save ALL transactions to DB
+
+                    alt Incoming transaction (to_address = wallet)
+                        Processor->>Events: emit('transaction.new', tx)
+                        Note over Events: Event emitted for incoming only
+                    else Outgoing transaction (from_address = wallet)
+                        Note over Processor: No event (saved to DB only)
+                    end
                 end
             end
         end
@@ -341,11 +384,23 @@ sequenceDiagram
 
 #### TronGridClient
 
-- **Responsibility**: HTTP communication with TronGrid API, response transformation, error handling
+- **Responsibility**: HTTP communication with TronGrid API, response transformation, error handling, pagination
 - **Interface**:
   ```typescript
   interface TronGridClient {
+    /**
+     * Fetch all USDT transactions since minTimestamp.
+     * Handles pagination internally - fetches all pages.
+     * Returns transactions sorted by block_timestamp ascending (oldest first).
+     */
     fetchUSDTTransactions(address: string, minTimestamp: number): Promise<USDTTransaction[]>;
+
+    /**
+     * Get the wallet creation timestamp from TronGrid API.
+     * Used as primary fallback when no transactions exist in database.
+     * Returns null if account info is not available.
+     */
+    getAccountCreationTimestamp(address: string): Promise<number | null>;
   }
   ```
 - **Dependencies**: `ConfigService`, `axios`
@@ -359,17 +414,29 @@ sequenceDiagram
     startPolling(): void;
     stopPolling(): Promise<void>;
     isPolling(): boolean;
-    getInitialTimestamp(): Promise<number>; // Queries DB for last tx timestamp, falls back to now - 60000ms
+    /**
+     * Get initial timestamp for first poll with fallback chain:
+     * 1. Query DB for last saved transaction timestamp
+     * 2. If no DB data: Query TronGrid for wallet creation date
+     * 3. If no wallet creation date: Use now - 2 years
+     */
+    getInitialTimestamp(): Promise<number>;
   }
   ```
 - **Dependencies**: `TronGridClient`, `TransactionProcessorService`, `ConfigService`, `DbService`
 
 #### TransactionProcessorService
 
-- **Responsibility**: Transform API responses to domain models, filter incoming transactions, emit events
+- **Responsibility**: Transform API responses to domain models, save all transactions, emit events for incoming only
 - **Interface**:
   ```typescript
   interface TransactionProcessorService {
+    /**
+     * Process a single USDT transaction:
+     * 1. Check deduplication (skip if duplicate)
+     * 2. Save to database (all transactions)
+     * 3. Emit event ONLY if incoming (to_address = walletAddress)
+     */
     processUSDTTransaction(tx: TRC20ApiResponse, walletAddress: string): Promise<void>;
   }
   ```
@@ -466,18 +533,32 @@ Input:
   Preconditions:
     - address is valid TRON address (base58 or hex)
     - minTimestamp is Unix timestamp in milliseconds
-    - First poll: minTimestamp = last saved transaction timestamp from DB (or now - 60000ms if no DB data)
+    - First poll: minTimestamp = last saved transaction timestamp from DB (or wallet creation date, or now - 2 years if no DB data)
     - Subsequent polls: minTimestamp = timestamp of last processed transaction
   Validation: Address format checked, timestamp > 0
 
 Output:
   Type: Transaction[] (domain model, USDT only)
   Guarantees:
-    - Transactions sorted by timestamp descending
+    - Transactions sorted by block_timestamp ascending (oldest first, chronological order)
     - All required fields populated
     - Amount converted from smallest unit to USDT (6 decimals)
     - Only USDT TRC20 transactions (contract: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t)
+    - All pages fetched (pagination handled internally)
   On Error: Throws TronGridApiError with retry info
+
+API Parameters:
+  - contract_address: USDT contract (TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t)
+  - only_confirmed: true
+  - min_timestamp: {minTimestamp}
+  - order_by: block_timestamp,asc
+  - limit: 200 (per page)
+  - fingerprint: {from previous response, for pagination}
+
+Pagination:
+  - Client handles pagination internally
+  - Fetches all pages until response has no fingerprint
+  - Returns complete merged result
 
 Invariants:
   - API key always included in requests
@@ -649,7 +730,8 @@ export interface BlockchainConfig {
   polling: {
     intervalMs: number;
     enabled: boolean;
-    fallbackWindowMs: number; // Fallback lookback window when no DB data exists (default: 60000ms = 1 minute)
+    fallbackWindowMs: number; // Secondary fallback lookback window when no DB data AND no wallet creation date (default: 63072000000ms = 2 years)
+    maxPages: number; // Maximum pagination pages per poll cycle to prevent infinite loops (default: 100)
   };
   lruCache: {
     maxSize: number;
@@ -675,7 +757,8 @@ export default registerAs('blockchain', (): BlockchainConfig => ({
   polling: {
     intervalMs: parseInt(process.env.POLLING_INTERVAL_MS || '5000', 10),
     enabled: process.env.POLLING_ENABLED !== 'false',
-    fallbackWindowMs: parseInt(process.env.POLLING_FALLBACK_WINDOW_MS || '60000', 10),
+    fallbackWindowMs: parseInt(process.env.POLLING_FALLBACK_WINDOW_MS || '63072000000', 10), // 2 years
+    maxPages: parseInt(process.env.POLLING_MAX_PAGES || '100', 10), // Safety limit for pagination
   },
   lruCache: {
     maxSize: parseInt(process.env.LRU_CACHE_SIZE || '10000', 10),
@@ -702,7 +785,8 @@ export default registerAs('blockchain', (): BlockchainConfig => ({
 | `TRONGRID_TIMEOUT_MS` | No | `10000` | Request timeout |
 | `POLLING_INTERVAL_MS` | No | `5000` | Polling interval |
 | `POLLING_ENABLED` | No | `true` | Enable/disable polling |
-| `POLLING_FALLBACK_WINDOW_MS` | No | `60000` | Fallback lookback window when no DB data (1 minute) |
+| `POLLING_FALLBACK_WINDOW_MS` | No | `63072000000` | Secondary fallback lookback window when no DB data AND no wallet creation date (2 years) |
+| `POLLING_MAX_PAGES` | No | `100` | Maximum pagination pages per poll cycle (safety limit) |
 | `LRU_CACHE_SIZE` | No | `10000` | Max LRU cache entries |
 | `LRU_CACHE_TTL_MS` | No | `3600000` | LRU entry TTL |
 | `BACKOFF_INITIAL_MS` | No | `1000` | Initial backoff delay |
@@ -801,10 +885,10 @@ Tests derived directly from Acceptance Criteria:
 
 | Component | Test Focus | Key Test Cases |
 |-----------|------------|----------------|
-| TronGridClient | Response transformation, error handling | AC-2.1, AC-2.2, AC-2.3, AC-2.4, AC-2.5 |
+| TronGridClient | Response transformation, error handling, pagination, sorting | AC-2.1, AC-2.2, AC-2.3, AC-2.4, AC-2.5, AC-2.6, AC-2.7, AC-2.8 |
 | DeduplicationService | LRU behavior, DB fallback | AC-4.1, AC-4.2, AC-4.3, AC-4.4 |
-| TransactionProcessorService | Incoming filtering, event emission | AC-3.1, AC-3.2, AC-5.1, AC-5.2, AC-5.3 |
-| TransactionPollerService | Timing, skip logic, backoff, DB timestamp retrieval | AC-1.1, AC-1.2, AC-7.1, AC-7.4, AC-10.1, AC-10.2, AC-10.3, AC-10.4 |
+| TransactionProcessorService | Save all txs, emit events for incoming only | AC-3.1, AC-3.2, AC-3.3, AC-5.1, AC-5.2, AC-5.3 |
+| TransactionPollerService | Timing, skip logic, backoff, DB timestamp retrieval, fallback chain | AC-1.1, AC-1.2, AC-7.1, AC-7.4, AC-10.1, AC-10.2, AC-10.3, AC-10.4 |
 | BlockchainConfig | Defaults, validation | AC-9.1, AC-9.2, AC-9.3 |
 
 ### Integration Tests
@@ -820,14 +904,19 @@ Tests derived directly from Acceptance Criteria:
 
 | Test Scenario | Setup | Expected Outcome |
 |---------------|-------|------------------|
-| New incoming USDT transaction | Mock TronGrid with incoming USDT tx | Event emitted, tx in DB |
-| Outgoing USDT transaction ignored | Mock TronGrid with outgoing USDT tx | No event emitted |
-| Duplicate transaction | Same tx in consecutive polls | No duplicate event |
+| New incoming USDT transaction | Mock TronGrid with incoming USDT tx | Event emitted, tx saved to DB |
+| Outgoing USDT transaction saved but no event | Mock TronGrid with outgoing USDT tx | No event emitted, tx saved to DB |
+| Both incoming and outgoing transactions | Mock TronGrid with mixed txs | All saved to DB, events only for incoming |
+| Duplicate transaction | Same tx in consecutive polls | No duplicate event, no duplicate DB entry |
 | Rate limit handling | Mock 429 response | Backoff applied, recovery |
 | Network failure | Mock timeout | Retry with backoff |
-| Initial polling - no DB data | Fresh start with empty database | Uses fallback (now - 60s) as minTimestamp |
+| Pagination - multiple pages | Mock TronGrid returning fingerprint | All pages fetched, all transactions processed |
+| Pagination - empty result | Mock TronGrid returning no transactions | No errors, no transactions processed |
+| Initial polling - no DB data, wallet has creation date | Fresh start, empty DB | Uses wallet creation timestamp from TronGrid |
+| Initial polling - no DB data, no wallet creation date | Fresh start, empty DB, API returns null | Uses fallback (now - 2 years) as minTimestamp |
 | Initial polling - DB has data | Start with existing transactions in DB | Uses last saved transaction timestamp |
 | Restart after downtime | Restart service after extended downtime | Continues from last saved timestamp, no transactions skipped |
+| Chronological processing | Mock TronGrid with transactions | Transactions processed in ascending order (oldest first) |
 
 ### Performance Tests
 
@@ -910,6 +999,8 @@ Tests derived directly from Acceptance Criteria:
 | 2026-01-21 | 1.0 | Initial version | Claude |
 | 2026-01-21 | 1.1 | Scope narrowed to USDT only; initial polling window set to 1 minute | Claude |
 | 2026-01-22 | 1.2 | Initial polling timestamp now retrieved from database instead of fixed 1-minute window | Claude |
+| 2026-01-22 | 1.3 | Transaction scope expanded; pagination support; sorting changed to ascending; fallback timestamp chain updated | Claude |
+| 2026-01-22 | 1.3.1 | API verification confirmed; added max_pages safety limit (AC-2.9) | Claude |
 
 ## Change History
 
@@ -1022,3 +1113,146 @@ Replaced fixed 1-minute window with database-based timestamp retrieval to ensure
 **ADR Relationship:**
 - ADR-0001 remains valid - TronGrid polling approach unchanged
 - Change improves reliability without modifying core architecture
+
+### v1.3 - 2026-01-22
+
+**Major Changes:**
+
+#### 1. Transaction Scope Expansion
+
+**Previous Behavior:**
+- Track incoming transactions only
+- Ignore outgoing transactions completely
+
+**New Behavior:**
+- Download ALL USDT transactions (both incoming AND outgoing)
+- Save ALL transactions to database (for history/audit trail)
+- Emit notifications (events) ONLY for incoming transactions
+
+**Rationale:**
+- Complete transaction history required for audit and reconciliation
+- Outgoing transactions are valuable for user's transaction history view
+- Event emission for incoming only maintains original notification behavior
+
+**Affected Sections:**
+- Agreement Checklist (Scope): Added "Download ALL transactions", "Save ALL transactions to database", "Emit notifications ONLY for incoming"
+- Non-Scope: Removed "Outgoing transaction monitoring"
+- FR-3: Changed from "Track incoming transactions only" to "Download all transactions, emit events for incoming only"
+- AC-3.1: Changed to "save all transactions to database"
+- AC-3.2: Changed to "emit events only for incoming transactions"
+- AC-3.3: Added "Outgoing transactions saved but NOT trigger event emission"
+- TransactionProcessorService interface: Updated responsibility description
+- Data Flow Diagram: Updated loop to show "ALL transactions" processing with conditional event emission
+
+#### 2. Pagination Support
+
+**Previous Behavior:**
+- No pagination support
+- Single API call returned limited results
+
+**New Behavior:**
+- TronGridClient handles pagination internally using `fingerprint` parameter
+- Fetches ALL pages until no more data is available
+- Returns complete merged result
+
+**Rationale:**
+- Large time gaps (e.g., after extended downtime) may return more transactions than single page limit
+- Ensures no transactions are missed due to pagination limits
+- Internal pagination handling keeps the interface simple for consumers
+
+**Affected Sections:**
+- Agreement Checklist (Scope): Added "Support pagination when fetching transactions from TronGrid API"
+- AC-2.6: Added pagination support using `fingerprint` parameter
+- AC-2.7: Added requirement to fetch all pages until no fingerprint returned
+- TronGridClient interface: Added JSDoc explaining pagination handling
+- Data Contract: Added "Pagination" section and "API Parameters" section
+- Data Flow Diagram: Added pagination loop visualization
+- E2E Tests: Added "Pagination - multiple pages" and "Pagination - empty result" scenarios
+- Unit Tests: Added AC-2.6, AC-2.7 to TronGridClient test focus
+
+#### 3. Sorting Order Change
+
+**Previous Behavior:**
+- Transactions sorted by timestamp descending (newest first)
+
+**New Behavior:**
+- Transactions sorted by `block_timestamp,asc` (oldest first)
+- Enables chronological processing of transactions
+
+**Rationale:**
+- Processing oldest transactions first ensures correct state progression
+- Matches natural order of events (first in, first processed)
+- Required for correct handling of dependent transactions
+
+**Affected Sections:**
+- Agreement Checklist (Scope): Added "Process transactions chronologically (oldest first)"
+- AC-2.8: Added requirement for ascending sort order
+- Data Contract: Changed "Transactions sorted by timestamp descending" to "block_timestamp ascending"
+- Data Contract: Added `order_by: block_timestamp,asc` to API Parameters
+- Data Flow Diagram: Updated to show "sorted asc, oldest first"
+- E2E Tests: Added "Chronological processing" test scenario
+
+#### 4. Fallback Timestamp Chain Update
+
+**Previous Behavior:**
+- Primary: Last saved transaction timestamp from DB
+- Secondary fallback: `now - 60000ms` (1 minute)
+
+**New Behavior:**
+- Primary: Last saved transaction timestamp from DB
+- Secondary fallback: Wallet creation date from TronGrid API
+- Tertiary fallback: `now - 63072000000ms` (2 years)
+
+**Rationale:**
+- 1-minute fallback was too short for fresh installations with existing wallet history
+- Wallet creation date provides accurate starting point for new installations
+- 2-year fallback ensures complete history capture when wallet creation date unavailable
+- Supports wallets with historical transactions that need to be imported
+
+**Affected Sections:**
+- AC-10.2: Updated fallback chain description with primary and secondary fallbacks
+- TronGridClient interface: Added `getAccountCreationTimestamp(address: string): Promise<number | null>` method
+- TransactionPollerService interface: Updated `getInitialTimestamp()` JSDoc with fallback chain
+- Data Contract: Updated precondition for first poll timestamp source
+- Configuration Schema: Changed default `fallbackWindowMs` from 60000 to 63072000000 (2 years)
+- Environment Variables: Updated `POLLING_FALLBACK_WINDOW_MS` default and description
+- Data Flow Diagram: Added `getAccountCreationTimestamp` call and decision branches for fallback chain
+- E2E Tests: Split "Initial polling - no DB data" into two scenarios (with/without wallet creation date)
+
+**Summary of Configuration Changes:**
+| Parameter | Previous Default | New Default | Reason |
+|-----------|-----------------|-------------|--------|
+| `POLLING_FALLBACK_WINDOW_MS` | `60000` (1 min) | `63072000000` (2 years) | Now tertiary fallback; needs to cover full wallet history |
+
+**ADR Relationship:**
+- ADR-0001 remains valid - TronGrid polling approach unchanged
+- Changes expand data capture scope without modifying core architecture
+- Pagination and sorting are implementation details within existing design boundaries
+
+### v1.3.1 - 2026-01-22
+
+**API Verification and Safety Improvements**
+
+Verified TronGrid API parameters and added safety measures for pagination.
+
+**API Verification Results:**
+
+| Feature | Endpoint | Field/Parameter | Status |
+|---------|----------|-----------------|--------|
+| Sorting | `/v1/accounts/{address}/transactions/trc20` | `order_by=block_timestamp,asc` | ✅ Verified |
+| Pagination | `/v1/accounts/{address}/transactions/trc20` | `fingerprint` | ✅ Verified |
+| Wallet creation date | `/v1/accounts/{address}` | `data.create_time` (milliseconds) | ✅ Verified |
+
+**New Acceptance Criteria:**
+- AC-2.9: Added max_pages safety limit to prevent infinite pagination loops (default: 100 pages)
+
+**Affected Sections:**
+- AC-2.8: Added API verification note
+- AC-2.9: New acceptance criterion for pagination safety
+- AC-10.2: Added API verification note for `create_time` field
+- Configuration Schema: Added `polling.maxPages` (default: 100)
+- Environment Variables: Added `POLLING_MAX_PAGES`
+
+**Rationale:**
+- Confirmed API compatibility before implementation to avoid rework
+- Added pagination safety limit as recommended by document review

@@ -184,16 +184,16 @@ graph LR
 
 #### Tasks
 - [x] Install packages: `pnpm add drizzle-orm postgres` and `pnpm add -D drizzle-kit`
-- [ ] Create `libs/db/src/config/db.config.ts` with DbConfig interface and registerAs factory
-- [ ] Create `drizzle.config.ts` at project root with schema path and PostgreSQL dialect
-- [ ] Add `DATABASE_URL` and pool configuration to `.env.example`
+- [x] Create `libs/db/src/config/db.config.ts` with DbConfig interface and registerAs factory
+- [x] Create `drizzle.config.ts` at project root with schema path and PostgreSQL dialect
+- [x] Add `DATABASE_URL` and pool configuration to `.env.example`
 - [ ] Quality check: `pnpm run check` passes
 
 #### Phase Completion Criteria
 - [x] Packages installed and lockfile updated
-- [ ] DbConfig exports type and registerAs function
-- [ ] drizzle.config.ts compiles without errors
-- [ ] Environment variables documented
+- [x] DbConfig exports type and registerAs function
+- [x] drizzle.config.ts compiles without errors
+- [x] Environment variables documented
 
 #### Operational Verification Procedures
 1. Run `pnpm install` - verify no dependency conflicts
@@ -212,7 +212,7 @@ graph LR
 - [ ] Create `libs/db/src/schema/payments.ts` - payments table with user FK
 - [ ] Create `libs/db/src/schema/relations.ts` - table relationships (users -> subscriptions, payments)
 - [ ] Create `libs/db/src/schema/index.ts` - aggregated schema exports
-- [ ] Create `libs/db/src/types/dto.ts` - CreateUserDto, UpdateUserDto, CreatePaymentDto
+- [x] Create `libs/db/src/types/dto.ts` - CreateUserDto, UpdateUserDto, CreatePaymentDto
 - [ ] Quality check: `pnpm run check` and `pnpm run build` pass
 
 #### Phase Completion Criteria
@@ -232,20 +232,20 @@ graph LR
 **Purpose**: Create connection management and migration infrastructure
 
 #### Tasks
-- [ ] Create `libs/db/src/database.provider.ts`:
+- [x] Create `libs/db/src/database.provider.ts`:
   - Export `SQL_CLIENT` symbol and `SqlClientProvider` (postgres.js client)
   - Export `DRIZZLE` symbol and `DatabaseProvider` (Drizzle instance with migrations)
   - Export `DrizzleDB` type alias
-- [ ] Implement useFactory pattern with ConfigService injection
-- [ ] Implement programmatic migrations in DatabaseProvider.useFactory()
+- [x] Implement useFactory pattern with ConfigService injection
+- [x] Implement programmatic migrations in DatabaseProvider.useFactory()
 - [ ] Create initial migration: `npx drizzle-kit generate`
 - [ ] Quality check: `pnpm run check` passes
 
 #### Phase Completion Criteria
-- [ ] SqlClientProvider creates postgres.js connection (AC-2.1)
-- [ ] DatabaseProvider runs migrations on startup (AC-3.1)
+- [x] SqlClientProvider creates postgres.js connection (AC-2.1)
+- [x] DatabaseProvider runs migrations on startup (AC-3.1)
 - [ ] Migrations folder `drizzle/` contains SQL files
-- [ ] Separate migration client with max:1 for race condition prevention
+- [x] Separate migration client with max:1 for race condition prevention
 
 #### Operational Verification Procedures
 1. Run `pnpm run build` - verify provider compiles
@@ -260,13 +260,13 @@ graph LR
 **Test Resolution Target**: 12/12 integration tests (AC-4.x through AC-10.x)
 
 #### Task 4.1: TransactionsService (3 tests)
-- [ ] Create `libs/db/src/services/transactions.service.ts`
-- [ ] Implement `findByHash(hash: string): Promise<Transaction | null>` (AC-4.1, AC-4.2)
-- [ ] Implement `save(transaction: Transaction): Promise<void>` (AC-5.1, AC-5.2, AC-5.3)
-- [ ] Implement `getLastTimestamp(): Promise<number | null>` (AC-6.1, AC-6.2)
-- [ ] Implement `getMonitoredWalletAddress(): Promise<string | null>` (AC-7.1, AC-7.2)
-- [ ] Create and execute TransactionsService integration tests (6 tests)
-- [ ] Quality check: `pnpm run test` passes for TransactionsService
+- [x] Create `libs/db/src/services/transactions.service.ts`
+- [x] Implement `findByHash(hash: string): Promise<Transaction | null>` (AC-4.1, AC-4.2)
+- [x] Implement `save(transaction: Transaction): Promise<void>` (AC-5.1, AC-5.2, AC-5.3)
+- [x] Implement `getLastTimestamp(): Promise<number | null>` (AC-6.1, AC-6.2)
+- [x] Implement `getMonitoredWalletAddress(): Promise<string | null>` (AC-7.1, AC-7.2)
+- [x] Create and execute TransactionsService integration tests (6 tests)
+- [x] Quality check: `pnpm run test` passes for TransactionsService
 
 #### Task 4.2: UsersService (2 tests)
 - [ ] Create `libs/db/src/services/users.service.ts`

@@ -16,53 +16,53 @@ Create configuration files for Drizzle ORM and database connection management. T
 3. `.env.example` - Document required environment variables
 
 ## Target Files
-- [ ] drizzle.config.ts (project root)
-- [ ] libs/db/src/config/db.config.ts
-- [ ] .env.example (update)
+- [x] drizzle.config.ts (project root)
+- [x] libs/db/src/config/db.config.ts
+- [x] .env.example (update)
 
 ## Implementation Steps
 
 ### 1. Create drizzle.config.ts
-- [ ] Create file at project root with Config type import
-- [ ] Set schema path to './libs/db/src/schema/index.ts'
-- [ ] Set out directory to './drizzle'
-- [ ] Set dialect to 'postgresql'
-- [ ] Configure dbCredentials.url from process.env.DATABASE_URL
-- [ ] Enable verbose and strict mode
-- [ ] Reference Design Doc drizzle-kit configuration section
+- [x] Create file at project root with Config type import
+- [x] Set schema path to './libs/db/src/schema/index.ts'
+- [x] Set out directory to './drizzle'
+- [x] Set dialect to 'postgresql'
+- [x] Configure dbCredentials.url from process.env.DATABASE_URL
+- [x] Enable verbose and strict mode
+- [x] Reference Design Doc drizzle-kit configuration section
 
 ### 2. Create libs/db/src/config/db.config.ts
-- [ ] Create config directory: `libs/db/src/config/`
-- [ ] Define DbConfig interface with structure:
+- [x] Create config directory: `libs/db/src/config/`
+- [x] Define DbConfig interface with structure:
   - url: string
   - pool: { max, idleTimeoutMs, connectionTimeoutMs }
   - migrations: { runOnStartup, migrationsFolder }
-- [ ] Implement registerAs('database', ...) factory function
-- [ ] Read environment variables with defaults:
+- [x] Implement registerAs('database', ...) factory function
+- [x] Read environment variables with defaults:
   - DATABASE_URL (required, no default)
   - DB_POOL_MAX (default: 10)
   - DB_POOL_IDLE_TIMEOUT_MS (default: 30000)
   - DB_POOL_CONNECTION_TIMEOUT_MS (default: 10000)
   - DB_RUN_MIGRATIONS (default: true unless 'false')
-- [ ] Set migrationsFolder to './drizzle'
-- [ ] Reference Design Doc configuration schema section
+- [x] Set migrationsFolder to './drizzle'
+- [x] Reference Design Doc configuration schema section
 
 ### 3. Update .env.example
-- [ ] Add DATABASE_URL with example PostgreSQL connection string
-- [ ] Add DB_POOL_MAX with default value 10
-- [ ] Add DB_POOL_IDLE_TIMEOUT_MS with default value 30000
-- [ ] Add DB_POOL_CONNECTION_TIMEOUT_MS with default value 10000
-- [ ] Add DB_RUN_MIGRATIONS with default value true
-- [ ] Add MONITORED_WALLET_ADDRESS placeholder
-- [ ] Include comments explaining each variable
+- [x] Add DATABASE_URL with example PostgreSQL connection string
+- [x] Add DB_POOL_MAX with default value 10
+- [x] Add DB_POOL_IDLE_TIMEOUT_MS with default value 30000
+- [x] Add DB_POOL_CONNECTION_TIMEOUT_MS with default value 10000
+- [x] Add DB_RUN_MIGRATIONS with default value true
+- [x] Add MONITORED_WALLET_ADDRESS placeholder
+- [x] Include comments explaining each variable
 
 ## Completion Criteria
-- [ ] All three files created
-- [ ] drizzle.config.ts compiles without TypeScript errors
-- [ ] db.config.ts exports DbConfig interface and default registerAs function
-- [ ] .env.example contains all required database variables
-- [ ] `pnpm run build` succeeds
-- [ ] Operation verified: L3 (Build Success) - configuration files compile
+- [x] All three files created
+- [x] drizzle.config.ts compiles without TypeScript errors
+- [x] db.config.ts exports DbConfig interface and default registerAs function
+- [x] .env.example contains all required database variables
+- [x] `pnpm run build` succeeds
+- [x] Operation verified: L3 (Build Success) - configuration files compile
 
 ## Notes
 - Impact scope: Configuration files only, no runtime code changes
