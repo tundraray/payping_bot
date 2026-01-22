@@ -19,6 +19,11 @@ import { formatUsdtDisplay, translate } from '../utils';
 export class TransactionListener {
   private readonly logger = new Logger(TransactionListener.name);
 
+  /** Subscriber count threshold for enabling rate limiting */
+  private readonly RATE_LIMIT_THRESHOLD = 10;
+  /** Delay between messages in ms (~25 msg/sec, under Telegram's 30/sec limit) */
+  private readonly RATE_LIMIT_DELAY_MS = 40;
+
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
     private readonly transactionsService: TransactionsService,
@@ -95,9 +100,8 @@ export class TransactionListener {
         }
 
         // Rate limiting: Respect Telegram's 30 msg/sec limit
-        // Add small delay between messages to avoid hitting rate limit
-        if (subscribers.length > 10) {
-          await this.delay(40); // 40ms delay = ~25 msg/sec
+        if (subscribers.length > this.RATE_LIMIT_THRESHOLD) {
+          await this.delay(this.RATE_LIMIT_DELAY_MS);
         }
       }
 
@@ -158,24 +162,6 @@ export class TransactionListener {
       time,
       hash,
     });
-  }
-
-  /**
-   * Truncate address for display (first 6 and last 3 characters).
-   * Example: TRX7nK...9kP
-   */
-  private truncateAddress(address: string): string {
-    if (address.length <= 10) return address;
-    return `${address.slice(0, 6)}...${address.slice(-3)}`;
-  }
-
-  /**
-   * Truncate transaction hash for display (first 8 and last 4 characters).
-   * Example: a1b2c3d4...xyz1
-   */
-  private truncateHash(hash: string): string {
-    if (hash.length <= 12) return hash;
-    return `${hash.slice(0, 8)}...${hash.slice(-4)}`;
   }
 
   /**
