@@ -14,6 +14,12 @@
   "linter": {
     "enabled": true,
     "rules": {
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error",
+        "noUnusedPrivateClassMembers": "error",
+        "noUnusedFunctionParameters": "off"
+      },
       "style": {
         "useImportType": "off"
       }
