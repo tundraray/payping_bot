@@ -40,6 +40,7 @@ describe('TronGridClient Integration Tests', () => {
     process.env.BACKOFF_MAX_MS = '1000';
     process.env.BACKOFF_MULTIPLIER = '2';
     process.env.BACKOFF_JITTER_MS = '50';
+    process.env.USDT_CONTRACT_ADDRESS = USDT_CONTRACT_ADDRESS;
 
     module = await Test.createTestingModule({
       imports: [
@@ -65,6 +66,7 @@ describe('TronGridClient Integration Tests', () => {
     delete process.env.BACKOFF_MAX_MS;
     delete process.env.BACKOFF_MULTIPLIER;
     delete process.env.BACKOFF_JITTER_MS;
+    delete process.env.USDT_CONTRACT_ADDRESS;
   });
 
   // ===========================================================================
