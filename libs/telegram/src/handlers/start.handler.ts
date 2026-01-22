@@ -1,17 +1,30 @@
-import { SubscriptionsService, UsersService } from '@app/db';
-import { Injectable, Logger } from '@nestjs/common';
+import { SubscriptionsService, TransactionsService, UsersService } from '@app/db';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { InlineKeyboard } from 'grammy';
+import { TelegramService } from '../telegram.service';
 import type { AnalyticsData, BotContext } from '../types/telegram.types';
 import { CALLBACK_ACTIONS } from '../types/telegram.types';
+import { formatUsdtDisplay } from '../utils';
 
 @Injectable()
-export class StartHandler {
+export class StartHandler implements OnModuleInit {
   private readonly logger = new Logger(StartHandler.name);
 
   constructor(
     private readonly usersService: UsersService,
     private readonly subscriptionsService: SubscriptionsService,
+    private readonly transactionsService: TransactionsService,
+    private readonly telegramService: TelegramService,
   ) {}
+
+  /**
+   * Register /start command on module initialization.
+   */
+  onModuleInit(): void {
+    const bot = this.telegramService.getBot();
+    bot.command('start', (ctx) => this.handleStart(ctx));
+    this.logger.log('StartHandler commands registered');
+  }
 
   /**
    * Handle /start command.
@@ -33,17 +46,40 @@ export class StartHandler {
           username: ctx.from.username,
           firstName: ctx.from.first_name,
           lastName: ctx.from.last_name,
-          languageCode: ctx.from.language_code,
         });
         this.logger.log(`Created new user: ${telegramId}`);
       }
+
+      // Save user's language preference (fallback to 'en' if not provided)
+      const languageCode = ctx.from?.language_code || 'en';
+      await this.usersService.updateLanguage(telegramId, languageCode);
 
       // Check subscription status
       const subscription = await this.subscriptionsService.getActive(user.id);
       const isSubscribed = !!subscription;
 
-      // Build message
-      const message = this.buildMessage(ctx, isSubscribed);
+      // Fetch analytics data
+      const now = new Date();
+      const currentYear = now.getUTCFullYear();
+      const currentMonth = now.getUTCMonth() + 1; // JavaScript months are 0-indexed, need 1-12
+
+      const currentMonthSum = await this.transactionsService.getMonthlySum(
+        currentYear,
+        currentMonth,
+      );
+      const rollingAverage = await this.transactionsService.getRollingAverage(3);
+
+      // Determine months used: if rolling average > 0, we have historical data
+      const monthsUsed = Number.parseFloat(rollingAverage) > 0 ? 3 : 0;
+
+      const analytics: AnalyticsData = {
+        currentMonthSum,
+        expectedAmount: rollingAverage,
+        monthsUsed,
+      };
+
+      // Build message with analytics
+      const message = this.buildMessage(ctx, isSubscribed, analytics);
       const keyboard = this.buildKeyboard(ctx, isSubscribed);
 
       await ctx.reply(message, {
@@ -66,15 +102,24 @@ export class StartHandler {
     lines.push(ctx.t('welcome'));
     lines.push('');
 
-    // Analytics (will be added in Phase 5)
+    // Analytics section (consolidated locale keys)
     if (analytics) {
-      lines.push(`<b>${ctx.t('analytics-title')}</b>`);
-      lines.push(ctx.t('analytics-current', { amount: analytics.currentMonthSum }));
+      // Format current amount (raw -> display with separators)
+      const currentAmount = formatUsdtDisplay(analytics.currentMonthSum);
+
       if (analytics.monthsUsed > 0) {
-        lines.push(ctx.t('analytics-expected', { amount: analytics.expectedAmount }));
-        lines.push(ctx.t('analytics-based-on', { months: analytics.monthsUsed.toString() }));
+        // Has historical data - show expected amount
+        const expectedAmount = analytics.expectedAmount; // Already formatted by getRollingAverage()
+        lines.push(
+          ctx.t('analytics-with-history', {
+            currentAmount,
+            expectedAmount,
+            months: analytics.monthsUsed.toString(),
+          }),
+        );
       } else {
-        lines.push(ctx.t('analytics-expected-na'));
+        // No historical data
+        lines.push(ctx.t('analytics-no-history', { currentAmount }));
       }
       lines.push('');
     }

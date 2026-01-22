@@ -1,9 +1,10 @@
 import type { Transaction, TransactionType } from '@app/blockchain';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, gte, lt } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { transactions } from '../schema';
+import { formatUsdt } from '../utils/usdt.utils';
 
 /**
  * TransactionsService provides database operations for blockchain transaction persistence.
@@ -151,6 +152,118 @@ export class TransactionsService {
     } catch {
       // Fail-open for configuration: return null if not configured
       return Promise.resolve(null);
+    }
+  }
+
+  /**
+   * Calculates the rolling average of monthly income over the last N months.
+   *
+   * Includes all N months in the calculation, even if some months have zero
+   * transactions. This provides an accurate average that reflects months with
+   * no income.
+   *
+   * @param months - Number of months to include in rolling average (e.g., 3)
+   * @returns Average monthly USDT amount as string with 2 decimal precision, "0.00" if no data or months=0
+   * @throws Error on database failure (fail-fast)
+   *
+   * @see AC-1.2: Displays expected income from 3-month average
+   * @see AC-1.3: Uses available months if < 3 months data (includes zeros)
+   * @see AC-1.4: Returns "0.00" when no data exists
+   */
+  async getRollingAverage(months: number): Promise<string> {
+    try {
+      // Edge case: 0 months requested returns "0.00"
+      if (months <= 0) {
+        return '0.00';
+      }
+
+      const now = new Date();
+      let totalSumRaw = 0; // Sum raw amounts (smallest unit)
+
+      // Loop through the last N months (including current month)
+      for (let i = 0; i < months; i++) {
+        // Calculate year and month for each iteration
+        // Using Date constructor handles month underflow correctly (e.g., month -1 becomes December of prev year)
+        const targetDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+        const year = targetDate.getUTCFullYear();
+        const month = targetDate.getUTCMonth() + 1; // Convert to 1-indexed
+
+        const monthSum = await this.getMonthlySum(year, month);
+        totalSumRaw += Number.parseFloat(monthSum); // Parse raw amount
+      }
+
+      // Calculate average on raw values (divide by number of months requested)
+      // All months contribute to average, including zeros
+      const averageRaw = totalSumRaw / months;
+
+      // Format at the end: convert from raw to human-readable USDT format
+      return formatUsdt(averageRaw);
+    } catch (error) {
+      this.logger.error('Failed to get rolling average', { months, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Calculates the sum of incoming USDT transactions for a specific month.
+   *
+   * Only counts transactions where toAddress matches the monitored wallet
+   * (incoming transactions only). Amount precision is preserved at 6 decimals.
+   *
+   * @param year - Calendar year (e.g., 2026)
+   * @param month - Calendar month (1-12)
+   * @returns Total USDT amount as string with 6 decimal precision, "0" if no transactions
+   * @throws Error on database failure (fail-fast)
+   *
+   * @see AC-1.1: Supports current month income display
+   * @see AC-1.4: Returns "0" when no data exists
+   */
+  async getMonthlySum(year: number, month: number): Promise<string> {
+    try {
+      // Get monitored wallet address from configuration
+      const walletAddress = await this.getMonitoredWalletAddress();
+
+      // If no wallet configured, return "0" (no transactions can match)
+      if (!walletAddress) {
+        return '0';
+      }
+
+      // Calculate start and end timestamps for the month (UTC)
+      // Month is 1-indexed (1 = January), JavaScript Date uses 0-indexed months
+      const startTimestamp = Date.UTC(year, month - 1, 1);
+      const endTimestamp = Date.UTC(year, month, 1);
+
+      // Query transactions where:
+      // - toAddress = monitored wallet (incoming only)
+      // - timestamp >= start of month
+      // - timestamp < start of next month
+      const result = await this.db
+        .select({ amount: transactions.amount })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.toAddress, walletAddress),
+            gte(transactions.timestamp, startTimestamp),
+            lt(transactions.timestamp, endTimestamp),
+          ),
+        );
+
+      // Return "0" if no transactions found
+      if (result.length === 0) {
+        return '0';
+      }
+
+      // Sum the amounts (stored in smallest unit, e.g., 1000000 = 1 USDT)
+      let sumInSmallestUnit = 0;
+      for (const row of result) {
+        sumInSmallestUnit += Number.parseFloat(row.amount);
+      }
+
+      // Return raw amount (presentation layer formats for display)
+      return sumInSmallestUnit.toString();
+    } catch (error) {
+      this.logger.error('Failed to get monthly sum', { year, month, error });
+      throw error;
     }
   }
 }

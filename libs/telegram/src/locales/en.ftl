@@ -1,37 +1,46 @@
-# English translations for PayPing bot
-
 # Welcome message
-welcome = Welcome to PayPing!
+welcome = 👋 Welcome to PayPing!
 
-    This bot notifies you when funds arrive at the company wallet.
+    I help you track salary payments to your company wallet.
+    You'll get instant notifications when funds arrive.
 
-# Analytics section
-analytics-title = Monthly Analytics
-analytics-current = This month: { $amount } USDT
-analytics-expected = Expected: { $amount } USDT
-analytics-expected-na = Expected: N/A (insufficient data)
-analytics-based-on = Based on { $months }-month average
+# Analytics - with historical data
+analytics-with-history = 📊 <b>Monthly Stats</b>
+    ━━━━━━━━━━━━━━━
+    • This month: { $currentAmount } USDT
+    • Expected: { $expectedAmount } USDT
+      (based on { $months }-month average)
 
-# Subscription status
-status-subscribed = You are subscribed to notifications.
-status-not-subscribed = You are not subscribed to notifications.
+# Analytics - no historical data yet
+analytics-no-history = 📊 <b>Monthly Stats</b>
+    ━━━━━━━━━━━━━━━
+    • This month: { $currentAmount } USDT
+    • Expected: N/A (not enough data yet)
+
+# Transaction notification - shows progress toward expected salary amount
+notification = 💰 <b>Funds received!</b>
+
+    <b>+{ $amount } USDT</b> just arrived
+
+    This month: { $monthTotal } / { $expectedAmount } USDT
+    Expecting more transactions.
+
+    { $time } · <a href="https://tronscan.org/#/transaction/{ $hash }">View on Tronscan</a>
 
 # Subscription actions
-subscribe-success = You have subscribed to notifications.
-subscribe-already = You are already subscribed.
-unsubscribe-success = You have unsubscribed from notifications.
-unsubscribe-not-subscribed = You are not currently subscribed.
+subscribe-success = ✅ Subscribed! You'll now receive payment notifications.
+subscribe-already = ℹ️ You're already subscribed.
+unsubscribe-success = Unsubscribed. You won't receive notifications anymore.
+unsubscribe-not-subscribed = You're not currently subscribed.
+
+# Status indicators
+status-subscribed = ✅ Subscribed
+status-not-subscribed = 🔔 Not subscribed
 
 # Buttons
 btn-subscribe = Subscribe
 btn-unsubscribe = Unsubscribe
 
-# Transaction notification
-notification-title = New Transaction
-notification-amount = Amount: { $amount } USDT
-notification-from = From: { $address }
-notification-hash = Tx: { $hash }
-
 # Errors
-error-generic = An error occurred. Please try again later.
-error-rate-limit = Too many requests. Please wait a moment.
+error-generic = ⚠️ Something went wrong. Please try again.
+error-rate-limit = ⏳ Too many requests. Please wait a moment.

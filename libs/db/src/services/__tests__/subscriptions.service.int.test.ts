@@ -250,6 +250,43 @@ describe('SubscriptionsService Integration Tests', () => {
       // Assert: User not included
       expect(result).toHaveLength(0);
     });
+
+    // AC-8.1: getActiveSubscribers returns languageCode field
+    conditionalIt('AC-8.1: returns languageCode for active subscribers', async () => {
+      // Arrange: Create user with language preference
+      const user = await createTestUser();
+      await usersService.updateLanguage(user.telegramId, 'uk');
+
+      // Create active subscription
+      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await subscriptionsService.create(user.id, futureDate);
+
+      // Act: Get active subscribers
+      const result = await subscriptionsService.getActiveSubscribers();
+
+      // Assert: Verify languageCode returned
+      expect(result).toHaveLength(1);
+      expect(result[0].telegramId).toBe(user.telegramId);
+      expect(result[0].languageCode).toBe('uk');
+    });
+
+    conditionalIt('AC-8.1: returns null languageCode if not set', async () => {
+      // Arrange: Create user without setting language (languageCode defaults to null)
+      const user = await createTestUser();
+      // Don't call updateLanguage - languageCode should be null
+
+      // Create active subscription
+      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await subscriptionsService.create(user.id, futureDate);
+
+      // Act: Get active subscribers
+      const result = await subscriptionsService.getActiveSubscribers();
+
+      // Assert: languageCode should be null
+      expect(result).toHaveLength(1);
+      expect(result[0].telegramId).toBe(user.telegramId);
+      expect(result[0].languageCode).toBeNull();
+    });
   });
 
   describe('Expire Subscription', () => {

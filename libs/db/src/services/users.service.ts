@@ -159,6 +159,27 @@ export class UsersService {
   }
 
   /**
+   * Update user's language preference.
+   *
+   * @param telegramId - User's Telegram ID
+   * @param languageCode - Language code (e.g., 'en', 'ru', 'uk') or null to clear
+   * @returns Promise that resolves when update completes
+   * @throws Error on database failure (fail-fast)
+   */
+  async updateLanguage(telegramId: number, languageCode: string | null): Promise<void> {
+    try {
+      await this.db.update(users).set({ languageCode }).where(eq(users.telegramId, telegramId));
+    } catch (error) {
+      this.logger.error('Failed to update user language', {
+        telegramId,
+        languageCode,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Finds a user by their internal database ID.
    *
    * Used primarily for internal operations and foreign key references.

@@ -6,6 +6,7 @@ export const users = pgTable('users', {
   username: varchar('username', { length: 255 }),
   firstName: varchar('first_name', { length: 255 }),
   lastName: varchar('last_name', { length: 255 }),
+  languageCode: varchar('language_code', { length: 10 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   // Note: $onUpdateFn is a runtime-only feature (not reflected in DDL).
   // Updates must use Drizzle's update methods for this to work.

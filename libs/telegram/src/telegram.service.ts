@@ -20,9 +20,12 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
 
     this.bot = new Bot<BotContext>(config.botToken);
 
+    // Locales are copied to dist/locales by webpack
+    const localesDir = path.join(process.cwd(), 'dist', 'locales');
+
     this.i18n = new I18n<BotContext>({
       defaultLocale: 'en',
-      directory: path.join(__dirname, 'locales'),
+      directory: localesDir,
       useSession: false,
       globalTranslationContext: () => ({
         // Global context for translations if needed

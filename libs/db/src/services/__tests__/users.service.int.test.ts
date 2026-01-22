@@ -15,6 +15,7 @@
 
 import { ConfigModule } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { eq } from 'drizzle-orm';
 import dbConfig from '../../config/db.config';
 import {
   DatabaseProvider,
@@ -249,6 +250,55 @@ describe('UsersService Integration Tests', () => {
       expect(result?.username).toBe('new_username');
       expect(result?.firstName).toBe('Original');
       expect(result?.lastName).toBe('Name');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // updateLanguage
+  // ---------------------------------------------------------------------------
+  describe('updateLanguage', () => {
+    conditionalIt('should update user language preference', async () => {
+      // Arrange: Create user first
+      const userData = createTestUserDto();
+      await usersService.create(userData);
+
+      // Act: Update language
+      await usersService.updateLanguage(userData.telegramId, 'uk');
+
+      // Assert: Verify language updated via direct DB query
+      const [user] = await db.select().from(users).where(eq(users.telegramId, userData.telegramId));
+
+      expect(user.languageCode).toBe('uk');
+    });
+
+    conditionalIt('should update language multiple times', async () => {
+      // Arrange: Create user first
+      const userData = createTestUserDto();
+      await usersService.create(userData);
+
+      // Act: Update language twice
+      await usersService.updateLanguage(userData.telegramId, 'en');
+      await usersService.updateLanguage(userData.telegramId, 'ru');
+
+      // Assert: Verify latest language is set
+      const [user] = await db.select().from(users).where(eq(users.telegramId, userData.telegramId));
+
+      expect(user.languageCode).toBe('ru');
+    });
+
+    conditionalIt('should allow setting language to null', async () => {
+      // Arrange: Create user and set initial language
+      const userData = createTestUserDto();
+      await usersService.create(userData);
+      await usersService.updateLanguage(userData.telegramId, 'en');
+
+      // Act: Clear language by setting to null
+      await usersService.updateLanguage(userData.telegramId, null);
+
+      // Assert: Verify language is null
+      const [user] = await db.select().from(users).where(eq(users.telegramId, userData.telegramId));
+
+      expect(user.languageCode).toBeNull();
     });
   });
 

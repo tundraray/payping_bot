@@ -20,6 +20,7 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
+    "@fluent/bundle": "^0.19.1",
     "@grammyjs/i18n": "^1.1.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
@@ -42,6 +43,7 @@
     "@nestjs/testing": "^11.0.1",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
+    "copy-webpack-plugin": "^13.0.1",
     "drizzle-kit": "^0.31.8",
     "jest": "^30.0.0",
     "lefthook": "^2.0.15",

@@ -14,3 +14,6 @@ export { type User, UsersService } from './services/users.service';
 
 // DTO exports
 export * from './types/dto';
+
+// Utils exports (data conversion only, display formatting is in @app/telegram)
+export { formatUsdt, toRawUsdt } from './utils/usdt.utils';

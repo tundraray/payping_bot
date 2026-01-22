@@ -354,7 +354,7 @@ graph LR
   - Preserve 6 decimal precision
   - Files: `libs/db/src/services/transactions.service.ts`
 
-- [ ] Task 4.3: Add `getRollingAverage(months: number)` to TransactionsService
+- [x] Task 4.3: Add `getRollingAverage(months: number)` to TransactionsService
   - Calculate average of last N months' sums
   - Use available months if fewer than N exist
   - Return "0" if no data
@@ -523,20 +523,20 @@ graph LR
 
 #### Tasks
 
-- [ ] Task 7.1: Create `libs/telegram/src/listeners/transaction.listener.ts`
+- [x] Task 7.1: Create `libs/telegram/src/listeners/transaction.listener.ts`
   - Inject SubscriptionsService, TelegramService
   - Use `@OnEvent(TRANSACTION_NEW_EVENT)` decorator
   - Import `TRANSACTION_NEW_EVENT` from `@app/blockchain`
   - Files: `transaction.listener.ts`
 
-- [ ] Task 7.2: Implement onTransactionNew handler
+- [x] Task 7.2: Implement onTransactionNew handler
   - Extract transaction data from event payload
   - Call SubscriptionsService.getActiveSubscribers()
   - Format notification message with: amount, truncated sender address, timestamp, hash
   - Use localized message keys
   - Files: `transaction.listener.ts`
 
-- [ ] Task 7.3: Implement batch notification sending
+- [x] Task 7.3: Implement batch notification sending
   - Loop through subscribers, send notification to each
   - Use TelegramService.sendMessage()
   - Log each successful delivery
@@ -544,13 +544,13 @@ graph LR
   - Respect 30 msg/sec rate limit (stagger if needed)
   - Files: `transaction.listener.ts`
 
-- [ ] Task 7.4: Add timing and performance logging
+- [x] Task 7.4: Add timing and performance logging
   - Log total notification count
   - Log time from event receipt to completion
   - Target: < 5 seconds total (AC-5.1)
   - Files: `transaction.listener.ts`
 
-- [ ] Task 7.5: Create unit tests for TransactionListener
+- [x] Task 7.5: Create unit tests for TransactionListener
   - Mock SubscriptionsService.getActiveSubscribers
   - Mock TelegramService.sendMessage
   - Test notification sent to all subscribers
@@ -558,7 +558,7 @@ graph LR
   - Test empty subscriber list
   - Files: `transaction.listener.spec.ts`
 
-- [ ] Quality check: All tests pass
+- [x] Quality check: All tests pass
 
 #### Phase Completion Criteria
 
