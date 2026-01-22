@@ -1,4 +1,4 @@
-import { DbService } from '@app/db';
+import { TransactionsService } from '@app/db';
 import { ConfigService } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { USDT_CONTRACT_ADDRESS } from '../constants/contracts';
@@ -7,7 +7,7 @@ import { DeduplicationService } from './deduplication.service';
 
 describe('DeduplicationService', () => {
   let service: DeduplicationService;
-  let dbService: jest.Mocked<DbService>;
+  let transactionsService: jest.Mocked<TransactionsService>;
 
   const mockConfig = {
     lruCache: {
@@ -41,17 +41,17 @@ describe('DeduplicationService', () => {
           },
         },
         {
-          provide: DbService,
+          provide: TransactionsService,
           useValue: {
-            findTransactionByHash: jest.fn(),
-            saveTransaction: jest.fn(),
+            findByHash: jest.fn(),
+            save: jest.fn(),
           },
         },
       ],
     }).compile();
 
     service = module.get<DeduplicationService>(DeduplicationService);
-    dbService = module.get(DbService);
+    transactionsService = module.get(TransactionsService);
   });
 
   describe('constructor', () => {
@@ -80,13 +80,13 @@ describe('DeduplicationService', () => {
       await service.markProcessed(hash, transaction);
 
       // Reset DB mock to ensure we're not hitting DB
-      dbService.findTransactionByHash.mockClear();
+      transactionsService.findByHash.mockClear();
 
       // Check duplicate - should hit cache
       const isDuplicate = await service.isDuplicate(hash);
 
       expect(isDuplicate).toBe(true);
-      expect(dbService.findTransactionByHash).not.toHaveBeenCalled();
+      expect(transactionsService.findByHash).not.toHaveBeenCalled();
     });
 
     it('should not hit database when hash is in LRU cache', async () => {
@@ -95,8 +95,8 @@ describe('DeduplicationService', () => {
 
       // Add to cache
       await service.markProcessed(hash, transaction);
-      dbService.findTransactionByHash.mockClear();
-      dbService.saveTransaction.mockClear();
+      transactionsService.findByHash.mockClear();
+      transactionsService.save.mockClear();
 
       // Multiple checks should all hit cache
       for (let i = 0; i < 5; i++) {
@@ -104,7 +104,7 @@ describe('DeduplicationService', () => {
         expect(result).toBe(true);
       }
 
-      expect(dbService.findTransactionByHash).not.toHaveBeenCalled();
+      expect(transactionsService.findByHash).not.toHaveBeenCalled();
     });
   });
 
@@ -118,42 +118,42 @@ describe('DeduplicationService', () => {
       const hash = 'db-only-hash-456';
       const transaction = createMockTransaction(hash);
 
-      dbService.findTransactionByHash.mockResolvedValueOnce(transaction);
+      transactionsService.findByHash.mockResolvedValueOnce(transaction);
 
       const isDuplicate = await service.isDuplicate(hash);
 
       expect(isDuplicate).toBe(true);
-      expect(dbService.findTransactionByHash).toHaveBeenCalledWith(hash);
+      expect(transactionsService.findByHash).toHaveBeenCalledWith(hash);
     });
 
     it('should warm LRU cache after database hit', async () => {
       const hash = 'warm-cache-hash-789';
       const transaction = createMockTransaction(hash);
 
-      dbService.findTransactionByHash.mockResolvedValueOnce(transaction);
+      transactionsService.findByHash.mockResolvedValueOnce(transaction);
 
       // First call - hits DB
       await service.isDuplicate(hash);
 
       // Clear DB mock
-      dbService.findTransactionByHash.mockClear();
+      transactionsService.findByHash.mockClear();
 
       // Second call - should hit warmed cache
       const isDuplicate = await service.isDuplicate(hash);
 
       expect(isDuplicate).toBe(true);
-      expect(dbService.findTransactionByHash).not.toHaveBeenCalled();
+      expect(transactionsService.findByHash).not.toHaveBeenCalled();
     });
 
     it('should return false when hash not in cache and not in database', async () => {
       const hash = 'new-transaction-hash';
 
-      dbService.findTransactionByHash.mockResolvedValueOnce(null);
+      transactionsService.findByHash.mockResolvedValueOnce(null);
 
       const isDuplicate = await service.isDuplicate(hash);
 
       expect(isDuplicate).toBe(false);
-      expect(dbService.findTransactionByHash).toHaveBeenCalledWith(hash);
+      expect(transactionsService.findByHash).toHaveBeenCalledWith(hash);
     });
   });
 
@@ -167,8 +167,8 @@ describe('DeduplicationService', () => {
       const hash = 'new-hash-abc';
       const transaction = createMockTransaction(hash);
 
-      dbService.findTransactionByHash.mockResolvedValueOnce(null);
-      dbService.saveTransaction.mockResolvedValueOnce(undefined);
+      transactionsService.findByHash.mockResolvedValueOnce(null);
+      transactionsService.save.mockResolvedValueOnce(undefined);
 
       // Check - should be new
       const isDuplicate = await service.isDuplicate(hash);
@@ -177,20 +177,20 @@ describe('DeduplicationService', () => {
       // Mark as processed
       await service.markProcessed(hash, transaction);
 
-      expect(dbService.saveTransaction).toHaveBeenCalledWith(transaction);
+      expect(transactionsService.save).toHaveBeenCalledWith(transaction);
 
       // Now should be duplicate (in cache)
-      dbService.findTransactionByHash.mockClear();
+      transactionsService.findByHash.mockClear();
       const isDuplicateNow = await service.isDuplicate(hash);
       expect(isDuplicateNow).toBe(true);
-      expect(dbService.findTransactionByHash).not.toHaveBeenCalled();
+      expect(transactionsService.findByHash).not.toHaveBeenCalled();
     });
 
     it('should throw error if database save fails (fail-fast)', async () => {
       const hash = 'fail-save-hash';
       const transaction = createMockTransaction(hash);
 
-      dbService.saveTransaction.mockRejectedValueOnce(new Error('DB connection failed'));
+      transactionsService.save.mockRejectedValueOnce(new Error('DB connection failed'));
 
       await expect(service.markProcessed(hash, transaction)).rejects.toThrow(
         'DB connection failed',
@@ -201,7 +201,7 @@ describe('DeduplicationService', () => {
       const hash = 'rollback-hash';
       const transaction = createMockTransaction(hash);
 
-      dbService.saveTransaction.mockRejectedValueOnce(new Error('DB connection failed'));
+      transactionsService.save.mockRejectedValueOnce(new Error('DB connection failed'));
 
       try {
         await service.markProcessed(hash, transaction);
@@ -210,7 +210,7 @@ describe('DeduplicationService', () => {
       }
 
       // Hash should not be in cache after failed DB write
-      dbService.findTransactionByHash.mockResolvedValueOnce(null);
+      transactionsService.findByHash.mockResolvedValueOnce(null);
       const isDuplicate = await service.isDuplicate(hash);
       expect(isDuplicate).toBe(false);
     });
@@ -231,11 +231,11 @@ describe('DeduplicationService', () => {
       }
 
       // First items should have been evicted
-      dbService.findTransactionByHash.mockResolvedValueOnce(null);
+      transactionsService.findByHash.mockResolvedValueOnce(null);
       await service.isDuplicate('overflow-hash-0');
 
       // Should need DB check because it was evicted from cache
-      expect(dbService.findTransactionByHash).toHaveBeenCalled();
+      expect(transactionsService.findByHash).toHaveBeenCalled();
     });
 
     it('should keep recently accessed items in cache', async () => {
@@ -247,9 +247,9 @@ describe('DeduplicationService', () => {
       }
 
       // Access the first item to make it recently used
-      dbService.findTransactionByHash.mockClear();
+      transactionsService.findByHash.mockClear();
       await service.isDuplicate('fill-hash-0');
-      expect(dbService.findTransactionByHash).not.toHaveBeenCalled();
+      expect(transactionsService.findByHash).not.toHaveBeenCalled();
 
       // Add more items to cause eviction
       for (let i = 100; i < 110; i++) {
@@ -259,10 +259,10 @@ describe('DeduplicationService', () => {
       }
 
       // First item should still be in cache (LRU keeps recently accessed)
-      dbService.findTransactionByHash.mockClear();
+      transactionsService.findByHash.mockClear();
       const isDuplicate = await service.isDuplicate('fill-hash-0');
       expect(isDuplicate).toBe(true);
-      expect(dbService.findTransactionByHash).not.toHaveBeenCalled();
+      expect(transactionsService.findByHash).not.toHaveBeenCalled();
     });
   });
 
@@ -270,7 +270,7 @@ describe('DeduplicationService', () => {
     it('should return false (fail-open) when database query fails in isDuplicate', async () => {
       const hash = 'db-error-hash';
 
-      dbService.findTransactionByHash.mockRejectedValueOnce(new Error('Database unavailable'));
+      transactionsService.findByHash.mockRejectedValueOnce(new Error('Database unavailable'));
 
       // Should fail-open: return false to not miss transactions
       const isDuplicate = await service.isDuplicate(hash);
@@ -282,7 +282,7 @@ describe('DeduplicationService', () => {
       const hash = 'write-error-hash';
       const transaction = createMockTransaction(hash);
 
-      dbService.saveTransaction.mockRejectedValueOnce(new Error('Write failed'));
+      transactionsService.save.mockRejectedValueOnce(new Error('Write failed'));
 
       await expect(service.markProcessed(hash, transaction)).rejects.toThrow('Write failed');
     });

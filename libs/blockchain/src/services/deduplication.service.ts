@@ -1,4 +1,4 @@
-import { DbService } from '@app/db';
+import { TransactionsService } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LRUCache } from 'lru-cache';
@@ -21,7 +21,7 @@ export class DeduplicationService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly dbService: DbService,
+    private readonly transactionsService: TransactionsService,
   ) {
     const config = this.configService.get<BlockchainConfig>('blockchain');
     if (!config) {
@@ -55,7 +55,7 @@ export class DeduplicationService {
 
     // Slow path: check database
     try {
-      const existing = await this.dbService.findTransactionByHash(hash);
+      const existing = await this.transactionsService.findByHash(hash);
 
       if (existing) {
         // Warm the cache for future lookups
@@ -87,7 +87,7 @@ export class DeduplicationService {
 
     // Persist to database (fail-fast on error)
     try {
-      await this.dbService.saveTransaction(transaction);
+      await this.transactionsService.save(transaction);
       this.logger.debug(`Saved transaction: ${hash.substring(0, 16)}...`);
     } catch (error) {
       // Remove from cache since DB write failed
