@@ -20,12 +20,14 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
+    "@grammyjs/i18n": "^1.1.2",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/event-emitter": "^3.0.1",
     "axios": "^1.13.2",
     "drizzle-orm": "^0.45.1",
+    "grammy": "^1.39.3",
     "lru-cache": "^11.2.4",
     "postgres": "^3.4.8",
     "reflect-metadata": "^0.2.2",

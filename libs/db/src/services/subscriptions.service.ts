@@ -151,4 +151,38 @@ export class SubscriptionsService {
       throw error;
     }
   }
+
+  /**
+   * Cancels an active subscription for a user.
+   *
+   * Used when user explicitly unsubscribes. Sets status to 'cancelled'
+   * which is semantically different from 'expired' (user-initiated vs time-based).
+   *
+   * @param userId - Internal database user ID
+   * @returns True if subscription was cancelled, false if no active subscription found
+   * @throws Error on database failure (fail-fast)
+   */
+  async cancel(userId: number): Promise<boolean> {
+    try {
+      const result = await this.db
+        .update(subscriptions)
+        .set({ status: 'cancelled' })
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.status, 'active'),
+            gt(subscriptions.expiresAt, new Date()),
+          ),
+        )
+        .returning({ id: subscriptions.id });
+
+      return result.length > 0;
+    } catch (error) {
+      this.logger.error('Failed to cancel subscription', {
+        userId,
+        error,
+      });
+      throw error;
+    }
+  }
 }
