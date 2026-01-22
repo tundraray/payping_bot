@@ -1,4 +1,4 @@
-import { DbService } from '@app/db';
+import { TransactionsService } from '@app/db';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PollerState, TransactionPollerService } from './services/transaction-poller.service';
 
@@ -22,7 +22,7 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly pollerService: TransactionPollerService,
-    private readonly dbService: DbService,
+    private readonly transactionsService: TransactionsService,
   ) {}
 
   /**
@@ -34,7 +34,7 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
 
     try {
       // AC-6.1: Load wallet address from database
-      this.monitoredWallet = await this.dbService.getMonitoredWalletAddress();
+      this.monitoredWallet = await this.transactionsService.getMonitoredWalletAddress();
 
       if (!this.monitoredWallet) {
         // AC-6.2: Log warning and pause if no wallet configured
@@ -107,7 +107,7 @@ export class BlockchainService implements OnModuleInit, OnModuleDestroy {
    * AC-6.3: Allows changing wallet without restart.
    */
   async refreshWalletAddress(): Promise<void> {
-    const newWallet = await this.dbService.getMonitoredWalletAddress();
+    const newWallet = await this.transactionsService.getMonitoredWalletAddress();
 
     if (newWallet !== this.monitoredWallet) {
       this.logger.log(`Wallet address changed: ${this.monitoredWallet} -> ${newWallet}`);

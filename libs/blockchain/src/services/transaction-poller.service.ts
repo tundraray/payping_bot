@@ -1,4 +1,4 @@
-import { DbService } from '@app/db';
+import { TransactionsService } from '@app/db';
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TronGridClient } from '../clients/trongrid.client';
@@ -52,7 +52,7 @@ export class TransactionPollerService implements OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly tronGridClient: TronGridClient,
     private readonly processorService: TransactionProcessorService,
-    private readonly dbService: DbService,
+    private readonly transactionsService: TransactionsService,
   ) {
     const config = this.configService.get<BlockchainConfig>('blockchain');
     if (!config) {
@@ -80,7 +80,7 @@ export class TransactionPollerService implements OnModuleDestroy {
     }
 
     // Load wallet address from database
-    this.walletAddress = await this.dbService.getMonitoredWalletAddress();
+    this.walletAddress = await this.transactionsService.getMonitoredWalletAddress();
 
     if (!this.walletAddress) {
       this.logger.error('No wallet address configured, pausing polling');
@@ -156,7 +156,7 @@ export class TransactionPollerService implements OnModuleDestroy {
    * @implements AC-10.3 - Continue from last saved timestamp on restart
    */
   private async getInitialTimestamp(): Promise<number> {
-    const dbTimestamp = await this.dbService.getLastTransactionTimestamp();
+    const dbTimestamp = await this.transactionsService.getLastTimestamp();
 
     if (dbTimestamp !== null) {
       this.logger.log(`Using DB timestamp: ${new Date(dbTimestamp).toISOString()}`);

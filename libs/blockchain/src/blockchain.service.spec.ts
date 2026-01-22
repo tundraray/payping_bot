@@ -1,4 +1,4 @@
-import { DbService } from '@app/db';
+import { TransactionsService } from '@app/db';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { BlockchainService } from './blockchain.service';
 import { PollerState, TransactionPollerService } from './services/transaction-poller.service';
@@ -6,7 +6,7 @@ import { PollerState, TransactionPollerService } from './services/transaction-po
 describe('BlockchainService', () => {
   let service: BlockchainService;
   let pollerService: jest.Mocked<TransactionPollerService>;
-  let dbService: jest.Mocked<DbService>;
+  let transactionsService: jest.Mocked<TransactionsService>;
 
   beforeEach(async () => {
     const mockPollerService = {
@@ -15,11 +15,11 @@ describe('BlockchainService', () => {
       getState: jest.fn().mockReturnValue(PollerState.IDLE),
     };
 
-    const mockDbService = {
+    const mockTransactionsService = {
       getMonitoredWalletAddress: jest.fn().mockResolvedValue(null),
-      getLastTransactionTimestamp: jest.fn().mockResolvedValue(null),
-      findTransactionByHash: jest.fn().mockResolvedValue(null),
-      saveTransaction: jest.fn().mockResolvedValue(undefined),
+      getLastTimestamp: jest.fn().mockResolvedValue(null),
+      findByHash: jest.fn().mockResolvedValue(null),
+      save: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -30,15 +30,15 @@ describe('BlockchainService', () => {
           useValue: mockPollerService,
         },
         {
-          provide: DbService,
-          useValue: mockDbService,
+          provide: TransactionsService,
+          useValue: mockTransactionsService,
         },
       ],
     }).compile();
 
     service = module.get<BlockchainService>(BlockchainService);
     pollerService = module.get(TransactionPollerService);
-    dbService = module.get(DbService);
+    transactionsService = module.get(TransactionsService);
   });
 
   it('should be defined', () => {
@@ -47,25 +47,25 @@ describe('BlockchainService', () => {
 
   describe('onModuleInit', () => {
     it('should start polling when wallet address is configured', async () => {
-      dbService.getMonitoredWalletAddress.mockResolvedValue('TWalletAddress123');
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue('TWalletAddress123');
 
       await service.onModuleInit();
 
-      expect(dbService.getMonitoredWalletAddress).toHaveBeenCalled();
+      expect(transactionsService.getMonitoredWalletAddress).toHaveBeenCalled();
       expect(pollerService.startPolling).toHaveBeenCalled();
     });
 
     it('should not start polling when wallet address is not configured (AC-6.2)', async () => {
-      dbService.getMonitoredWalletAddress.mockResolvedValue(null);
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(null);
 
       await service.onModuleInit();
 
-      expect(dbService.getMonitoredWalletAddress).toHaveBeenCalled();
+      expect(transactionsService.getMonitoredWalletAddress).toHaveBeenCalled();
       expect(pollerService.startPolling).not.toHaveBeenCalled();
     });
 
     it('should handle errors gracefully during initialization', async () => {
-      dbService.getMonitoredWalletAddress.mockRejectedValue(new Error('DB error'));
+      transactionsService.getMonitoredWalletAddress.mockRejectedValue(new Error('DB error'));
 
       // Should not throw
       await expect(service.onModuleInit()).resolves.toBeUndefined();
@@ -118,7 +118,7 @@ describe('BlockchainService', () => {
     });
 
     it('should return wallet address after init (AC-6.1)', async () => {
-      dbService.getMonitoredWalletAddress.mockResolvedValue('TWalletAddress123');
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue('TWalletAddress123');
       await service.onModuleInit();
 
       expect(service.getMonitoredWallet()).toBe('TWalletAddress123');
@@ -128,7 +128,7 @@ describe('BlockchainService', () => {
   describe('refreshWalletAddress (AC-6.3)', () => {
     it('should restart polling when wallet changes', async () => {
       // Initialize with first wallet
-      dbService.getMonitoredWalletAddress.mockResolvedValue('TWallet1');
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue('TWallet1');
       await service.onModuleInit();
 
       // Reset mocks
@@ -136,7 +136,7 @@ describe('BlockchainService', () => {
       pollerService.stopPolling.mockClear();
 
       // Change wallet
-      dbService.getMonitoredWalletAddress.mockResolvedValue('TWallet2');
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue('TWallet2');
       await service.refreshWalletAddress();
 
       expect(pollerService.stopPolling).toHaveBeenCalled();
@@ -145,7 +145,7 @@ describe('BlockchainService', () => {
     });
 
     it('should not restart polling when wallet has not changed', async () => {
-      dbService.getMonitoredWalletAddress.mockResolvedValue('TWallet1');
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue('TWallet1');
       await service.onModuleInit();
 
       pollerService.startPolling.mockClear();
@@ -159,14 +159,14 @@ describe('BlockchainService', () => {
     });
 
     it('should stop polling when wallet is removed', async () => {
-      dbService.getMonitoredWalletAddress.mockResolvedValue('TWallet1');
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue('TWallet1');
       await service.onModuleInit();
 
       pollerService.startPolling.mockClear();
       pollerService.stopPolling.mockClear();
 
       // Remove wallet
-      dbService.getMonitoredWalletAddress.mockResolvedValue(null);
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(null);
       await service.refreshWalletAddress();
 
       expect(pollerService.stopPolling).toHaveBeenCalled();

@@ -3,8 +3,7 @@
 // Database provider exports
 export { DRIZZLE, type DrizzleDB, SQL_CLIENT } from './database.provider';
 export { DbModule } from './db.module';
-// Legacy service (to be removed in future)
-export { DbService } from './db.service';
+
 // Schema exports
 export * from './schema';
 export { type Payment, PaymentsService } from './services/payments.service';

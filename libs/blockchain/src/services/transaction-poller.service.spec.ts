@@ -1,7 +1,7 @@
 // TransactionPollerService Integration Tests - TDD Red Phase
 // Covers: AC-1.1, AC-1.2, AC-8.1, AC-8.3, AC-10.1, AC-10.2, AC-10.3, AC-10.5
 
-import { DbService } from '@app/db';
+import { TransactionsService } from '@app/db';
 import { ConfigService } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { TronGridClient } from '../clients/trongrid.client';
@@ -31,7 +31,7 @@ describe('TransactionPollerService Integration Tests', () => {
   let service: TransactionPollerService;
   let tronGridClient: jest.Mocked<TronGridClient>;
   let processorService: jest.Mocked<TransactionProcessorService>;
-  let dbService: jest.Mocked<DbService>;
+  let transactionsService: jest.Mocked<TransactionsService>;
 
   const mockConfig = {
     polling: {
@@ -75,9 +75,9 @@ describe('TransactionPollerService Integration Tests', () => {
           },
         },
         {
-          provide: DbService,
+          provide: TransactionsService,
           useValue: {
-            getLastTransactionTimestamp: jest.fn(),
+            getLastTimestamp: jest.fn(),
             getMonitoredWalletAddress: jest.fn(),
           },
         },
@@ -87,7 +87,7 @@ describe('TransactionPollerService Integration Tests', () => {
     service = module.get<TransactionPollerService>(TransactionPollerService);
     tronGridClient = module.get(TronGridClient);
     processorService = module.get(TransactionProcessorService);
-    dbService = module.get(DbService);
+    transactionsService = module.get(TransactionsService);
   });
 
   afterEach(async () => {
@@ -108,8 +108,8 @@ describe('TransactionPollerService Integration Tests', () => {
       const lastTimestamp = Date.now() - 30000; // 30 seconds ago
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(lastTimestamp);
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(lastTimestamp);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
       processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
 
@@ -119,7 +119,7 @@ describe('TransactionPollerService Integration Tests', () => {
       jest.advanceTimersByTime(100);
       await Promise.resolve(); // Flush promises
 
-      expect(dbService.getLastTransactionTimestamp).toHaveBeenCalled();
+      expect(transactionsService.getLastTimestamp).toHaveBeenCalled();
       expect(tronGridClient.fetchUSDTTransactions).toHaveBeenCalledWith(
         walletAddress,
         lastTimestamp,
@@ -135,8 +135,8 @@ describe('TransactionPollerService Integration Tests', () => {
       const savedTimestamp = Date.now() - 120000; // 2 minutes ago (during "downtime")
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(savedTimestamp);
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(savedTimestamp);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
       processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
 
@@ -165,8 +165,8 @@ describe('TransactionPollerService Integration Tests', () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
       const now = Date.now();
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(null);
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(null);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
       processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
 
@@ -201,8 +201,8 @@ describe('TransactionPollerService Integration Tests', () => {
     it('should skip scheduled poll when previous is still running', async () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(Date.now());
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
 
       // Make first poll take a long time
       let resolveFirstPoll: () => void;
@@ -247,8 +247,8 @@ describe('TransactionPollerService Integration Tests', () => {
     it('should complete current poll before shutting down', async () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(Date.now());
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
 
       let resolveCurrentPoll: () => void;
       const currentPollPromise = new Promise<Transaction[]>((resolve) => {
@@ -284,8 +284,8 @@ describe('TransactionPollerService Integration Tests', () => {
     it('should not start new polls after shutdown signal', async () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(Date.now());
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
       processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
 
@@ -320,8 +320,8 @@ describe('TransactionPollerService Integration Tests', () => {
       const tx1Timestamp = Date.now() - 30000;
       const tx2Timestamp = Date.now() - 15000;
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(initialTimestamp);
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(initialTimestamp);
 
       // First poll returns transactions
       tronGridClient.fetchUSDTTransactions
@@ -369,8 +369,8 @@ describe('TransactionPollerService Integration Tests', () => {
     it('should transition to POLLING state after startPolling', async () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(Date.now());
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
       processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
 
@@ -384,7 +384,7 @@ describe('TransactionPollerService Integration Tests', () => {
      * @complexity medium
      */
     it('should transition to PAUSED state when no wallet address configured', async () => {
-      dbService.getMonitoredWalletAddress.mockResolvedValue(null);
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(null);
 
       await service.startPolling();
 
@@ -398,8 +398,8 @@ describe('TransactionPollerService Integration Tests', () => {
     it('should not start polling when already polling', async () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(Date.now());
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
       processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
 
@@ -407,7 +407,7 @@ describe('TransactionPollerService Integration Tests', () => {
       await service.startPolling(); // Second call should be ignored
 
       // Should only call getMonitoredWalletAddress once
-      expect(dbService.getMonitoredWalletAddress).toHaveBeenCalledTimes(1);
+      expect(transactionsService.getMonitoredWalletAddress).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -422,8 +422,8 @@ describe('TransactionPollerService Integration Tests', () => {
     it('should continue polling after TronGrid API error', async () => {
       const walletAddress = 'TMonitoredWallet12345678901234567890';
 
-      dbService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
-      dbService.getLastTransactionTimestamp.mockResolvedValue(Date.now());
+      transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
+      transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
 
       // First poll fails
       tronGridClient.fetchUSDTTransactions
