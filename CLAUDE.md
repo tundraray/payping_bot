@@ -40,18 +40,37 @@ pnpm run check          # Biome check without auto-fix
 
 ## Architecture
 
-This is a NestJS **standalone application** (no HTTP server) for a Telegram bot:
+NestJS **standalone application** (no HTTP server) with monorepo structure:
 
-- `src/main.ts` - Application bootstrap using `NestFactory.createApplicationContext()`
-- `src/app.module.ts` - Root module that imports all feature modules
-- Feature modules follow NestJS conventions: `*.module.ts`, `*.service.ts`
-- Unit tests are co-located with source files as `*.spec.ts`
+```
+src/
+├── main.ts              # Bootstrap with createApplicationContext()
+└── app.module.ts        # Root module importing all libs
 
-**Planned architecture (not yet implemented):**
-- Bot module: grammY-based Telegram bot handlers (long polling)
-- Subscription module: Telegram Stars payment processing, expiration tracking
-- Wallet module: TronGrid polling service (3-5 second intervals), transaction deduplication by tx hash
-- Notification module: Alert delivery to active subscribers
+libs/
+├── blockchain/          # @app/blockchain - TronGrid API integration
+│   └── src/
+│       ├── blockchain.module.ts
+│       ├── blockchain.service.ts
+│       └── index.ts
+├── db/                  # @app/db - PostgreSQL persistence
+│   └── src/
+│       ├── db.module.ts
+│       ├── db.service.ts
+│       └── index.ts
+└── telegram/            # @app/telegram - grammY bot handlers
+    └── src/
+        ├── telegram.module.ts
+        ├── telegram.service.ts
+        └── index.ts
+```
+
+**Path aliases:** `@app/blockchain`, `@app/db`, `@app/telegram`
+
+**Planned features (not yet implemented):**
+- Telegram: grammY bot with long polling, Telegram Stars payments
+- Blockchain: TronGrid polling (3-5s intervals), tx deduplication by hash
+- DB: User subscriptions, payment history, tx tracking
 
 ## Code Style
 
