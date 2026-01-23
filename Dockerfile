@@ -34,6 +34,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY tsconfig.json tsconfig.build.json nest-cli.json webpack.config.js ./
 COPY src ./src
 COPY libs ./libs
+COPY drizzle ./drizzle
 
 # Build the application
 RUN pnpm run build
@@ -64,6 +65,9 @@ COPY --from=builder --chown=nestjs:nodejs /app/package.json ./
 
 # Copy locales for i18n support
 COPY --from=builder --chown=nestjs:nodejs /app/libs/telegram/src/locales ./dist/locales
+
+# Copy Drizzle migrations
+COPY --from=builder --chown=nestjs:nodejs /app/drizzle ./drizzle
 
 # Switch to non-root user
 USER nestjs
