@@ -519,7 +519,7 @@ describe('TransactionsService Integration Tests', () => {
 
     // AC-1.2: "When /start is executed, the system shall display expected income from 3-month average"
     conditionalIt(
-      'AC-1.2: calculates average correctly from multiple months with data',
+      'AC-1.2: calculates average correctly from previous months (excluding current)',
       async () => {
         // Arrange: Get monitored wallet address
         const walletAddress = await transactionsService.getMonitoredWalletAddress();
@@ -529,43 +529,53 @@ describe('TransactionsService Integration Tests', () => {
           return;
         }
 
-        // Create transactions in the current month and previous 2 months
+        // Create transactions in the previous 3 months (current month is excluded from average)
         const now = new Date();
         const currentMonthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
         const prevMonth1Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
         const prevMonth2Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1);
+        const prevMonth3Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1);
 
-        // Month 1 (current): 300 USDT
+        // Current month: 400 USDT (should be EXCLUDED from average)
         await transactionsService.save(
           createTestTransaction({
             toAddress: walletAddress,
-            amount: '300.000000',
+            amount: '400.000000',
             timestamp: currentMonthStart + 1000,
           }),
         );
 
-        // Month 2 (prev 1): 200 USDT
+        // Previous month 1: 300 USDT
         await transactionsService.save(
           createTestTransaction({
             toAddress: walletAddress,
-            amount: '200.000000',
+            amount: '300.000000',
             timestamp: prevMonth1Start + 1000,
           }),
         );
 
-        // Month 3 (prev 2): 100 USDT
+        // Previous month 2: 200 USDT
         await transactionsService.save(
           createTestTransaction({
             toAddress: walletAddress,
-            amount: '100.000000',
+            amount: '200.000000',
             timestamp: prevMonth2Start + 1000,
           }),
         );
 
-        // Act: Get 3-month rolling average
+        // Previous month 3: 100 USDT
+        await transactionsService.save(
+          createTestTransaction({
+            toAddress: walletAddress,
+            amount: '100.000000',
+            timestamp: prevMonth3Start + 1000,
+          }),
+        );
+
+        // Act: Get 3-month rolling average (previous 3 months, excluding current)
         const result = await transactionsService.getRollingAverage(3);
 
-        // Assert: Average = (300 + 200 + 100) / 3 = 200.00
+        // Assert: Average = (300 + 200 + 100) / 3 = 200.00 (current month 400 excluded)
         expect(result).toBe('200.00');
       },
     );
@@ -580,19 +590,19 @@ describe('TransactionsService Integration Tests', () => {
         return;
       }
 
-      // Create transactions in only the current month
+      // Create transactions in only the previous month (current month is excluded)
       const now = new Date();
-      const currentMonthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+      const prevMonth1Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
 
       await transactionsService.save(
         createTestTransaction({
           toAddress: walletAddress,
           amount: '150.000000',
-          timestamp: currentMonthStart + 1000,
+          timestamp: prevMonth1Start + 1000,
         }),
       );
 
-      // Act: Request 3-month average but only 1 month has data
+      // Act: Request 3-month average but only 1 of the previous 3 months has data
       const result = await transactionsService.getRollingAverage(3);
 
       // Assert: With design decision "include zero months", average = (150 + 0 + 0) / 3 = 50.00
@@ -608,30 +618,30 @@ describe('TransactionsService Integration Tests', () => {
         return;
       }
 
-      // Create transactions that result in decimal average
+      // Create transactions that result in decimal average (in previous months, current excluded)
       const now = new Date();
-      const currentMonthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
       const prevMonth1Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
+      const prevMonth2Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1);
 
-      // Month 1: 100.50 USDT
+      // Previous month 1: 100.50 USDT
       await transactionsService.save(
         createTestTransaction({
           toAddress: walletAddress,
           amount: '100.500000',
-          timestamp: currentMonthStart + 1000,
-        }),
-      );
-
-      // Month 2: 150.75 USDT
-      await transactionsService.save(
-        createTestTransaction({
-          toAddress: walletAddress,
-          amount: '150.750000',
           timestamp: prevMonth1Start + 1000,
         }),
       );
 
-      // Act: Get 2-month rolling average
+      // Previous month 2: 150.75 USDT
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: walletAddress,
+          amount: '150.750000',
+          timestamp: prevMonth2Start + 1000,
+        }),
+      );
+
+      // Act: Get 2-month rolling average (previous 2 months)
       const result = await transactionsService.getRollingAverage(2);
 
       // Assert: Average = (100.50 + 150.75) / 2 = 125.625 -> "125.63" (rounded)
@@ -647,34 +657,34 @@ describe('TransactionsService Integration Tests', () => {
         return;
       }
 
-      // Create transactions in month 1 and month 3, but NOT month 2
+      // Create transactions in prev1 and prev3, but NOT prev2 (current month excluded)
       const now = new Date();
-      const currentMonthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-      // Skip previous month (month 2)
-      const prevMonth2Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1);
+      const prevMonth1Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1);
+      // Skip prev month 2 (month 2)
+      const prevMonth3Start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1);
 
-      // Current month: 100 USDT
+      // Previous month 1: 100 USDT
       await transactionsService.save(
         createTestTransaction({
           toAddress: walletAddress,
           amount: '100.000000',
-          timestamp: currentMonthStart + 1000,
+          timestamp: prevMonth1Start + 1000,
         }),
       );
 
-      // Two months ago: 200 USDT
+      // Three months ago: 200 USDT
       await transactionsService.save(
         createTestTransaction({
           toAddress: walletAddress,
           amount: '200.000000',
-          timestamp: prevMonth2Start + 1000,
+          timestamp: prevMonth3Start + 1000,
         }),
       );
 
-      // Act: Get 3-month rolling average
+      // Act: Get 3-month rolling average (prev1, prev2, prev3)
       const result = await transactionsService.getRollingAverage(3);
 
-      // Assert: Average = (100 + 0 + 200) / 3 = 100.00 (month 2 contributes 0)
+      // Assert: Average = (100 + 0 + 200) / 3 = 100.00 (prev2 contributes 0)
       expect(result).toBe('100.00');
     });
 

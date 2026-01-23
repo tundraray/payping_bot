@@ -17,15 +17,27 @@ analytics-no-history = 📊 <b>Статистика за місяць</b>
     • Цього місяця: { $currentAmount } USDT
     • Очікується: Н/Д (поки недостатньо даних)
 
+# Статистика виплат (приблизні значення)
+payout-stats = 💸 <b>Виплати</b> (≈ приблизно)
+    ━━━━━━━━━━━━━━━
+    • Гаманців: ~{ $avgWallets } середнє / { $currentWallets } цього місяця
+    • Виплачено: ~{ $payoutsAmount } USDT цього місяця
+
 # Сповіщення про транзакцію - показує прогрес накопичення
 notification = 💰 <b>Надходження коштів!</b>
 
     <b>+{ $amount } USDT</b> щойно надійшло
 
-    За місяць: { $monthTotal } / { $expectedAmount } USDT
-    Очікуємо ще надходження.
+    📊 За місяць: { $monthTotal } / { $expectedAmount } USDT
 
-    { $time } · <a href="https://tronscan.org/#/transaction/{ $hash }">Дивитись у Tronscan</a>
+    💸 <b>Виплати</b> (≈ приблизно)
+    • Гаманців: ~{ $avgWallets } середнє / { $currentWallets } цього місяця
+    • Виплачено: ~{ $payoutsAmount } USDT
+
+    { $time }
+
+# Кнопка для перегляду транзакції в Tronscan
+btn-view-tronscan = 🔗 Дивитись у Tronscan
 
 # Дії підписки
 subscribe-success = ✅ Ви підписались! Тепер ви отримуватимете сповіщення про платежі.
@@ -84,6 +96,7 @@ position-up = ↑
 position-down = ↓
 position-same = →
 position-new = НОВИЙ
+position-miss = ПРОПУСК
 
 # Сповіщення про зміну зарплати
 salary-increase = 📈 Виявлено підвищення зарплати: { $wallet } +{ $percent }%

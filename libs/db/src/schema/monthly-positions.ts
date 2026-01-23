@@ -8,7 +8,7 @@ export const monthlyPositions = pgTable(
     id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
     recipientWalletId: integer('recipient_wallet_id')
       .notNull()
-      .references(() => recipientWallets.id),
+      .references(() => recipientWallets.id, { onDelete: 'cascade' }),
     yearMonth: varchar('year_month', { length: 7 }).notNull(), // Format: 'YYYY-MM' (e.g., '2026-01')
     position: integer('position').notNull(), // Position within classification group
     transactionHash: varchar('transaction_hash', { length: 64 }).notNull(),

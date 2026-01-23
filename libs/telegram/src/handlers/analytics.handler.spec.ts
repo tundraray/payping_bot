@@ -33,6 +33,7 @@ describe('AnalyticsHandler', () => {
         classification: 'EMPLOYEE',
         amount: '5000000000',
         previousPosition: 2,
+        previousAmount: '4500000000',
         positionChange: 'up',
       },
       {
@@ -41,6 +42,7 @@ describe('AnalyticsHandler', () => {
         classification: 'EMPLOYEE',
         amount: '4000000000',
         previousPosition: 1,
+        previousAmount: '5000000000',
         positionChange: 'down',
       },
     ],
@@ -51,6 +53,7 @@ describe('AnalyticsHandler', () => {
         classification: 'FREELANCER',
         amount: '3000000000',
         previousPosition: null,
+        previousAmount: null,
         positionChange: 'new',
       },
     ],

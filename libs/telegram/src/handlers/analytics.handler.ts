@@ -430,7 +430,10 @@ export class AnalyticsHandler implements OnModuleInit {
         ` ${entry.position.toString().padStart(2)} | ${truncatedWallet.padEnd(11)} | ${prevPos.padStart(4)} | ${posIndicator.padStart(6)}`,
       );
 
-      totalAmount += BigInt(entry.amount);
+      // Total = sum of previous month amounts (N-1)
+      if (entry.previousAmount !== null) {
+        totalAmount += BigInt(entry.previousAmount);
+      }
     }
 
     lines.push('</pre>');
@@ -484,7 +487,10 @@ export class AnalyticsHandler implements OnModuleInit {
   /**
    * Get position change indicator from i18n.
    */
-  private getPositionIndicator(ctx: BotContext, change: 'up' | 'down' | 'same' | 'new'): string {
+  private getPositionIndicator(
+    ctx: BotContext,
+    change: 'up' | 'down' | 'same' | 'new' | 'miss',
+  ): string {
     switch (change) {
       case 'up':
         return ctx.t('position-up');
@@ -494,6 +500,8 @@ export class AnalyticsHandler implements OnModuleInit {
         return ctx.t('position-same');
       case 'new':
         return ctx.t('position-new');
+      case 'miss':
+        return ctx.t('position-miss');
     }
   }
 

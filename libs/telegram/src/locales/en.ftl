@@ -17,15 +17,27 @@ analytics-no-history = 📊 <b>Monthly Stats</b>
     • This month: { $currentAmount } USDT
     • Expected: N/A (not enough data yet)
 
+# Payout statistics (approximate values)
+payout-stats = 💸 <b>Payouts</b> (≈ approximate)
+    ━━━━━━━━━━━━━━━
+    • Wallets: ~{ $avgWallets } avg / { $currentWallets } this month
+    • Paid out: ~{ $payoutsAmount } USDT this month
+
 # Transaction notification - shows progress toward expected salary amount
 notification = 💰 <b>Funds received!</b>
 
     <b>+{ $amount } USDT</b> just arrived
 
-    This month: { $monthTotal } / { $expectedAmount } USDT
-    Expecting more transactions.
+    📊 This month: { $monthTotal } / { $expectedAmount } USDT
 
-    { $time } · <a href="https://tronscan.org/#/transaction/{ $hash }">View on Tronscan</a>
+    💸 <b>Payouts</b> (≈ approximate)
+    • Wallets: ~{ $avgWallets } avg / { $currentWallets } this month
+    • Paid out: ~{ $payoutsAmount } USDT
+
+    { $time }
+
+# Button for viewing transaction on Tronscan
+btn-view-tronscan = 🔗 View on Tronscan
 
 # Subscription actions
 subscribe-success = ✅ Subscribed! You'll now receive payment notifications.
@@ -84,6 +96,7 @@ position-up = ↑
 position-down = ↓
 position-same = →
 position-new = NEW
+position-miss = MISS
 
 # Salary change notifications
 salary-increase = 📈 Salary increase detected: { $wallet } +{ $percent }%
