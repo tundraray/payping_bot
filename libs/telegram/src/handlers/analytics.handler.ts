@@ -114,6 +114,7 @@ export class AnalyticsHandler implements OnModuleInit {
       // Check if any data exists
       const hasData = this.hasAnalyticsData(analytics);
       if (!hasData) {
+        this.logger.warn('No analytics data found', { yearMonth });
         await ctx.reply(ctx.t('analytics-no-data'), { parse_mode: 'HTML' });
         return;
       }
@@ -236,17 +237,15 @@ export class AnalyticsHandler implements OnModuleInit {
   }
 
   /**
-   * Check if year-month is within the allowed 6-month range.
+   * Check if year-month is within the allowed range (not in the future).
    */
   private isWithinRange(yearMonth: string): boolean {
     const now = new Date();
     const [year, month] = yearMonth.split('-').map(Number);
     const target = new Date(Date.UTC(year, month - 1, 1));
+    const current = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-    // 6 months ago
-    const minDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1));
-
-    return target >= minDate && target <= now;
+    return target <= current;
   }
 
   /**

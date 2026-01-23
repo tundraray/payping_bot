@@ -1,0 +1,12 @@
+{
+  "typescript": {
+    "command": "vtsls.cmd",
+    "args": ["--stdio"],
+    "extensionToLanguage": {
+      ".ts": "typescript",
+      ".tsx": "typescriptreact",
+      ".js": "javascript",
+      ".jsx": "javascriptreact"
+    }
+  }
+}

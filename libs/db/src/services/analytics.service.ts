@@ -1,7 +1,7 @@
-import type { Transaction } from '@app/blockchain';
+import { type Transaction, TransactionType } from '@app/blockchain';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, eq, gte, lt, max } from 'drizzle-orm';
+import { and, asc, eq, gte, lt, max, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { monthlyPositions, recipientWallets, transactions } from '../schema';
 import {
@@ -211,6 +211,8 @@ export class AnalyticsService {
    */
   async getGroupedAnalytics(yearMonth: string): Promise<GroupedAnalyticsResult> {
     try {
+      this.logger.log('getGroupedAnalytics called', { yearMonth });
+
       // Get previous month for comparison
       const [year, month] = yearMonth.split('-').map(Number);
       const prevDate = new Date(Date.UTC(year, month - 2, 1));
@@ -229,6 +231,17 @@ export class AnalyticsService {
         .innerJoin(recipientWallets, eq(monthlyPositions.recipientWalletId, recipientWallets.id))
         .where(eq(monthlyPositions.yearMonth, yearMonth))
         .orderBy(asc(monthlyPositions.position));
+
+      this.logger.log('Query results', {
+        yearMonth,
+        prevYearMonth,
+        currentPositionsCount: currentPositions.length,
+        positions: currentPositions.slice(0, 5).map((p) => ({
+          wallet: p.walletAddress.slice(0, 8),
+          classification: p.classification,
+          position: p.position,
+        })),
+      });
 
       // Get previous month positions for comparison
       const prevPositions = await this.db
@@ -601,5 +614,63 @@ export class AnalyticsService {
   private async getMonitoredWalletAddress(): Promise<string | null> {
     const address = this.configService.get<string>('MONITORED_WALLET_ADDRESS');
     return address || null;
+  }
+
+  /**
+   * Backfill analytics from existing transactions.
+   * Processes all outgoing transactions from monitored wallet that haven't been processed yet.
+   *
+   * @returns Number of transactions processed
+   */
+  async backfillAnalytics(): Promise<number> {
+    const monitoredWallet = await this.getMonitoredWalletAddress();
+    if (!monitoredWallet) {
+      this.logger.warn('No monitored wallet configured, cannot backfill');
+      return 0;
+    }
+
+    this.logger.log('Starting analytics backfill', { monitoredWallet });
+
+    // Get all outgoing transactions ordered by timestamp
+    // Use case-insensitive comparison because TRON addresses can vary in case
+    const outgoingTxs = await this.db
+      .select()
+      .from(transactions)
+      .where(sql`lower(${transactions.fromAddress}) = lower(${monitoredWallet})`)
+      .orderBy(asc(transactions.timestamp));
+
+    this.logger.log(`Found ${outgoingTxs.length} outgoing transactions to process`);
+
+    let processed = 0;
+    for (const tx of outgoingTxs) {
+      try {
+        await this.processTransaction({
+          hash: tx.hash,
+          fromAddress: tx.fromAddress,
+          toAddress: tx.toAddress,
+          amount: tx.amount,
+          timestamp: tx.timestamp,
+          type: tx.type as TransactionType,
+          blockNumber: tx.blockNumber,
+          contractAddress: tx.contractAddress,
+          raw: tx.raw as Record<string, unknown>,
+        });
+        processed++;
+
+        if (processed % 10 === 0) {
+          this.logger.log(`Backfill progress: ${processed}/${outgoingTxs.length}`);
+        }
+      } catch (error) {
+        this.logger.error('Failed to process transaction during backfill', {
+          hash: tx.hash,
+          error,
+        });
+      }
+    }
+
+    this.logger.log(
+      `Backfill completed: ${processed}/${outgoingTxs.length} transactions processed`,
+    );
+    return processed;
   }
 }

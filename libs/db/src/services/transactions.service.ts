@@ -107,8 +107,12 @@ export class TransactionsService {
       });
 
       // Process analytics for outgoing transactions (payouts from monitored wallet)
+      // Use case-insensitive comparison because TRON addresses can vary in case
       const monitoredWallet = await this.getMonitoredWalletAddress();
-      if (monitoredWallet && transaction.fromAddress === monitoredWallet) {
+      if (
+        monitoredWallet &&
+        transaction.fromAddress.toLowerCase() === monitoredWallet.toLowerCase()
+      ) {
         try {
           await this.analyticsService.processTransaction(transaction);
           this.logger.debug('Analytics processed for outgoing transaction', {

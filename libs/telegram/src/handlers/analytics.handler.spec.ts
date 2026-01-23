@@ -218,11 +218,32 @@ describe('AnalyticsHandler', () => {
     });
 
     /**
-     * AC-7.4: 6-month range validation
+     * AC-7.4: Validate month is not in the future
      */
-    it('should validate month is within 6-month range', async () => {
+    it('should validate month is not in the future', async () => {
       const ctx = createMockContext(123456);
-      // Request a month 8 months ago
+      // Request a month 2 months in the future
+      const futureDate = new Date();
+      futureDate.setUTCMonth(futureDate.getUTCMonth() + 2);
+      const futureMonth = `${futureDate.getUTCFullYear()}-${String(futureDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      ctx.message = { text: `/analytics ${futureMonth}` } as typeof ctx.message;
+
+      analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
+
+      await handler.handleAnalytics(ctx);
+
+      // Should use current month instead of future month
+      const now = new Date();
+      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(currentMonth);
+    });
+
+    /**
+     * Allow access to historical months (no 6-month limit)
+     */
+    it('should allow access to historical months beyond 6 months', async () => {
+      const ctx = createMockContext(123456);
+      // Request a month 8 months ago - should be allowed now
       const pastDate = new Date();
       pastDate.setUTCMonth(pastDate.getUTCMonth() - 8);
       const pastMonth = `${pastDate.getUTCFullYear()}-${String(pastDate.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -232,10 +253,8 @@ describe('AnalyticsHandler', () => {
 
       await handler.handleAnalytics(ctx);
 
-      // Should use current month instead of out-of-range month
-      const now = new Date();
-      const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(currentMonth);
+      // Should use the requested historical month (no 6-month limit)
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(pastMonth);
     });
 
     /**
