@@ -26,7 +26,8 @@ export interface AnalyticsResult {
   classification: Classification;
   amount: string;
   previousPosition: number | null;
-  positionChange: 'up' | 'down' | 'same' | 'new';
+  previousAmount: string | null;
+  positionChange: 'up' | 'down' | 'same' | 'new' | 'miss';
 }
 
 export interface FiredEmployeeResult {
@@ -202,6 +203,12 @@ export class AnalyticsService {
   /**
    * Get grouped analytics data for a specific month.
    *
+   * Uses previous month (N-1) as baseline:
+   * - All wallets from N-1 are included
+   * - Wallets in N overlay N-1 data
+   * - Wallets in N-1 but NOT in N: show with amount=0, positionChange='miss'
+   * - Wallets in N but NOT in N-1: show with positionChange='new'
+   *
    * @param yearMonth - Month in 'YYYY-MM' format
    * @returns Analytics data grouped by classification
    *
@@ -213,10 +220,24 @@ export class AnalyticsService {
     try {
       this.logger.log('getGroupedAnalytics called', { yearMonth });
 
-      // Get previous month for comparison
+      // Get previous month for baseline
       const [year, month] = yearMonth.split('-').map(Number);
       const prevDate = new Date(Date.UTC(year, month - 2, 1));
       const prevYearMonth = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, '0')}`;
+
+      // Get previous month positions with wallet data (baseline)
+      const prevPositions = await this.db
+        .select({
+          position: monthlyPositions.position,
+          walletAddress: recipientWallets.address,
+          classification: recipientWallets.classification,
+          amount: monthlyPositions.amount,
+          recipientWalletId: monthlyPositions.recipientWalletId,
+        })
+        .from(monthlyPositions)
+        .innerJoin(recipientWallets, eq(monthlyPositions.recipientWalletId, recipientWallets.id))
+        .where(eq(monthlyPositions.yearMonth, prevYearMonth))
+        .orderBy(asc(monthlyPositions.position));
 
       // Get current month positions with wallet data
       const currentPositions = await this.db
@@ -235,6 +256,7 @@ export class AnalyticsService {
       this.logger.log('Query results', {
         yearMonth,
         prevYearMonth,
+        prevPositionsCount: prevPositions.length,
         currentPositionsCount: currentPositions.length,
         positions: currentPositions.slice(0, 5).map((p) => ({
           wallet: p.walletAddress.slice(0, 8),
@@ -243,16 +265,19 @@ export class AnalyticsService {
         })),
       });
 
-      // Get previous month positions for comparison
-      const prevPositions = await this.db
-        .select({
-          position: monthlyPositions.position,
-          recipientWalletId: monthlyPositions.recipientWalletId,
-        })
-        .from(monthlyPositions)
-        .where(eq(monthlyPositions.yearMonth, prevYearMonth));
+      // Create maps for easy lookup
+      const prevPosMap = new Map(prevPositions.map((p) => [p.recipientWalletId, p]));
+      const currentPosMap = new Map(currentPositions.map((p) => [p.recipientWalletId, p]));
 
-      const prevPosMap = new Map(prevPositions.map((p) => [p.recipientWalletId, p.position]));
+      // Collect wallet IDs in correct order:
+      // 1. Current month wallets first (already sorted by position)
+      // 2. Missed wallets (in prev but not in current) at the end
+      const currentWalletIds = currentPositions.map((p) => p.recipientWalletId);
+      const currentWalletIdSet = new Set(currentWalletIds);
+      const missedWalletIds = prevPositions
+        .filter((p) => !currentWalletIdSet.has(p.recipientWalletId))
+        .map((p) => p.recipientWalletId);
+      const allWalletIds = [...currentWalletIds, ...missedWalletIds];
 
       // Group results by classification
       const result: GroupedAnalyticsResult = {
@@ -271,20 +296,36 @@ export class AnalyticsService {
         UNKNOWN: 0,
       };
 
-      for (const pos of currentPositions) {
-        const prevPosition = prevPosMap.get(pos.recipientWalletId) ?? null;
-        const positionChange = this.calculatePositionChange(pos.position, prevPosition);
+      // Process all wallets (from both months)
+      for (const walletId of allWalletIds) {
+        const currentPos = currentPosMap.get(walletId);
+        const prevPos = prevPosMap.get(walletId);
+
+        // Get wallet data - prefer current month's data, fallback to previous month
+        const walletData = currentPos || prevPos;
+        if (!walletData) continue;
+
+        // Calculate position change
+        const positionChange = this.calculatePositionChange(
+          currentPos?.position ?? null,
+          prevPos?.position ?? null,
+        );
+
+        // For missed wallets (in N-1 but not in N), show with amount=0
+        const amount = currentPos?.amount ?? '0';
+        const position = currentPos?.position ?? 0;
 
         const analyticsResult: AnalyticsResult = {
-          position: pos.position,
-          walletAddress: pos.walletAddress,
-          classification: pos.classification as Classification,
-          amount: pos.amount,
-          previousPosition: prevPosition,
+          position,
+          walletAddress: walletData.walletAddress,
+          classification: walletData.classification as Classification,
+          amount,
+          previousPosition: prevPos?.position ?? null,
+          previousAmount: prevPos?.amount ?? null,
           positionChange,
         };
 
-        switch (pos.classification) {
+        switch (walletData.classification) {
           case 'EMPLOYEE':
             groupPositions.EMPLOYEE++;
             analyticsResult.position = groupPositions.EMPLOYEE;
@@ -306,6 +347,34 @@ export class AnalyticsService {
             result.unknown.push(analyticsResult);
             break;
         }
+      }
+
+      // Sort each group: current month wallets first (by position), then missed wallets
+      const sortByPositionAndStatus = (a: AnalyticsResult, b: AnalyticsResult) => {
+        // Missed wallets go to the end
+        if (a.positionChange === 'miss' && b.positionChange !== 'miss') return 1;
+        if (a.positionChange !== 'miss' && b.positionChange === 'miss') return -1;
+        // Within same status, sort by position
+        return a.position - b.position;
+      };
+
+      result.employees.sort(sortByPositionAndStatus);
+      result.freelancers.sort(sortByPositionAndStatus);
+      result.oneTime.sort(sortByPositionAndStatus);
+      result.unknown.sort(sortByPositionAndStatus);
+
+      // Reassign positions after sorting
+      for (let i = 0; i < result.employees.length; i++) {
+        result.employees[i].position = i + 1;
+      }
+      for (let i = 0; i < result.freelancers.length; i++) {
+        result.freelancers[i].position = i + 1;
+      }
+      for (let i = 0; i < result.oneTime.length; i++) {
+        result.oneTime[i].position = i + 1;
+      }
+      for (let i = 0; i < result.unknown.length; i++) {
+        result.unknown[i].position = i + 1;
       }
 
       // Get fired employees
@@ -597,11 +666,16 @@ export class AnalyticsService {
 
   /**
    * Calculate position change indicator.
+   * @param current - Current position (null if wallet not in current month - MISS)
+   * @param previous - Previous position (null if wallet not in previous month - NEW)
    */
   private calculatePositionChange(
-    current: number,
+    current: number | null,
     previous: number | null,
-  ): 'up' | 'down' | 'same' | 'new' {
+  ): 'up' | 'down' | 'same' | 'new' | 'miss' {
+    // Wallet was in previous month but not in current month
+    if (current === null) return 'miss';
+    // Wallet is in current month but wasn't in previous month
     if (previous === null) return 'new';
     if (current < previous) return 'up';
     if (current > previous) return 'down';

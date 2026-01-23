@@ -185,13 +185,16 @@ export class TransactionsService {
   }
 
   /**
-   * Calculates the rolling average of monthly income over the last N months.
+   * Calculates the rolling average of monthly income over the previous N months.
    *
-   * Includes all N months in the calculation, even if some months have zero
-   * transactions. This provides an accurate average that reflects months with
-   * no income.
+   * Excludes the reference month to provide a stable "expected" value that doesn't
+   * change as new transactions arrive. Includes all N previous months in the
+   * calculation, even if some months have zero transactions.
    *
-   * @param months - Number of months to include in rolling average (e.g., 3)
+   * @param months - Number of previous months to include in rolling average (e.g., 3)
+   * @param referenceDate - Reference date for calculation (defaults to current date).
+   *                        For transaction notifications, pass the transaction timestamp
+   *                        to calculate the average relative to when the transaction occurred.
    * @returns Average monthly USDT amount as string with 2 decimal precision, "0.00" if no data or months=0
    * @throws Error on database failure (fail-fast)
    *
@@ -199,21 +202,29 @@ export class TransactionsService {
    * @see AC-1.3: Uses available months if < 3 months data (includes zeros)
    * @see AC-1.4: Returns "0.00" when no data exists
    */
-  async getRollingAverage(months: number): Promise<string> {
+  async getRollingAverage(months: number, referenceDate?: Date | number): Promise<string> {
     try {
       // Edge case: 0 months requested returns "0.00"
       if (months <= 0) {
         return '0.00';
       }
 
-      const now = new Date();
+      // Use reference date if provided, otherwise current date
+      const refDate =
+        referenceDate instanceof Date
+          ? referenceDate
+          : referenceDate !== undefined
+            ? new Date(referenceDate)
+            : new Date();
       let totalSumRaw = 0; // Sum raw amounts (smallest unit)
 
-      // Loop through the last N months (including current month)
-      for (let i = 0; i < months; i++) {
+      // Loop through the previous N months (excluding reference month)
+      for (let i = 1; i <= months; i++) {
         // Calculate year and month for each iteration
         // Using Date constructor handles month underflow correctly (e.g., month -1 becomes December of prev year)
-        const targetDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+        const targetDate = new Date(
+          Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth() - i, 1),
+        );
         const year = targetDate.getUTCFullYear();
         const month = targetDate.getUTCMonth() + 1; // Convert to 1-indexed
 
@@ -292,6 +303,151 @@ export class TransactionsService {
       return sumInSmallestUnit.toString();
     } catch (error) {
       this.logger.error('Failed to get monthly sum', { year, month, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Calculates the sum of outgoing USDT transactions for a specific month.
+   *
+   * Only counts transactions where fromAddress matches the monitored wallet
+   * (outgoing/payout transactions).
+   *
+   * @param year - Calendar year (e.g., 2026)
+   * @param month - Calendar month (1-12)
+   * @returns Total USDT amount as string, "0" if no transactions
+   * @throws Error on database failure (fail-fast)
+   */
+  async getMonthlyOutgoingSum(year: number, month: number): Promise<string> {
+    try {
+      const walletAddress = await this.getMonitoredWalletAddress();
+
+      if (!walletAddress) {
+        return '0';
+      }
+
+      const startTimestamp = Date.UTC(year, month - 1, 1);
+      const endTimestamp = Date.UTC(year, month, 1);
+
+      const result = await this.db
+        .select({ amount: transactions.amount })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.fromAddress, walletAddress),
+            gte(transactions.timestamp, startTimestamp),
+            lt(transactions.timestamp, endTimestamp),
+          ),
+        );
+
+      if (result.length === 0) {
+        return '0';
+      }
+
+      let sumInSmallestUnit = 0;
+      for (const row of result) {
+        sumInSmallestUnit += Number.parseFloat(row.amount);
+      }
+
+      return sumInSmallestUnit.toString();
+    } catch (error) {
+      this.logger.error('Failed to get monthly outgoing sum', { year, month, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Calculates the average number of unique recipient wallets per month
+   * over the previous N months (excluding current month).
+   *
+   * @param months - Number of previous months to average
+   * @param referenceDate - Reference date for calculation (defaults to current date)
+   * @returns Average number of wallets as integer
+   * @throws Error on database failure (fail-fast)
+   */
+  async getAverageWalletCount(months: number, referenceDate?: Date | number): Promise<number> {
+    try {
+      if (months <= 0) {
+        return 0;
+      }
+
+      const walletAddress = await this.getMonitoredWalletAddress();
+      if (!walletAddress) {
+        return 0;
+      }
+
+      const refDate =
+        referenceDate instanceof Date
+          ? referenceDate
+          : referenceDate !== undefined
+            ? new Date(referenceDate)
+            : new Date();
+
+      let totalWallets = 0;
+
+      for (let i = 1; i <= months; i++) {
+        const targetDate = new Date(
+          Date.UTC(refDate.getUTCFullYear(), refDate.getUTCMonth() - i, 1),
+        );
+        const year = targetDate.getUTCFullYear();
+        const month = targetDate.getUTCMonth() + 1;
+
+        const startTimestamp = Date.UTC(year, month - 1, 1);
+        const endTimestamp = Date.UTC(year, month, 1);
+
+        // Count unique recipient addresses
+        const result = await this.db
+          .selectDistinct({ toAddress: transactions.toAddress })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.fromAddress, walletAddress),
+              gte(transactions.timestamp, startTimestamp),
+              lt(transactions.timestamp, endTimestamp),
+            ),
+          );
+
+        totalWallets += result.length;
+      }
+
+      return Math.round(totalWallets / months);
+    } catch (error) {
+      this.logger.error('Failed to get average wallet count', { months, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Gets the count of unique recipient wallets for a specific month.
+   *
+   * @param year - Calendar year
+   * @param month - Calendar month (1-12)
+   * @returns Number of unique wallets
+   */
+  async getMonthlyWalletCount(year: number, month: number): Promise<number> {
+    try {
+      const walletAddress = await this.getMonitoredWalletAddress();
+      if (!walletAddress) {
+        return 0;
+      }
+
+      const startTimestamp = Date.UTC(year, month - 1, 1);
+      const endTimestamp = Date.UTC(year, month, 1);
+
+      const result = await this.db
+        .selectDistinct({ toAddress: transactions.toAddress })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.fromAddress, walletAddress),
+            gte(transactions.timestamp, startTimestamp),
+            lt(transactions.timestamp, endTimestamp),
+          ),
+        );
+
+      return result.length;
+    } catch (error) {
+      this.logger.error('Failed to get monthly wallet count', { year, month, error });
       throw error;
     }
   }
