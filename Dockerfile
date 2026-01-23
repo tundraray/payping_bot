@@ -14,7 +14,8 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 
 # Install dependencies (including devDependencies for build)
-RUN pnpm install --frozen-lockfile
+# --ignore-scripts: skip prepare script (lefthook) which requires git
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # ============================================
 # Stage 2: Build
