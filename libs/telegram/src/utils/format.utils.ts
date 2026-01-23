@@ -76,6 +76,20 @@ export function truncateAddress(address: string): string {
 }
 
 /**
+ * Truncates a blockchain address for analytics display.
+ * Shows first 4 and last 3 characters.
+ *
+ * @param address - Full address string
+ * @returns Truncated address (e.g., "TRX7...kPm")
+ *
+ * @see AC-2.2: Wallet truncation first 4 + last 3
+ */
+export function truncateWalletForAnalytics(address: string): string {
+  if (address.length <= 10) return address;
+  return `${address.slice(0, 4)}...${address.slice(-3)}`;
+}
+
+/**
  * Truncates a transaction hash for display.
  * Shows first 8 and last 4 characters.
  *

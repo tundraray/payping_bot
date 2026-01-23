@@ -65,10 +65,10 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
-    this.logger.log('Stopping Telegram bot...');
+    this.logger.log('onModuleDestroy called, stopping Telegram bot...');
     try {
       await this.bot.stop();
-      this.logger.log('Telegram bot stopped');
+      this.logger.log('Telegram bot stopped successfully');
     } catch (error) {
       this.logger.error('Error stopping Telegram bot', error);
     }

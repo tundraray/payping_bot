@@ -3,6 +3,7 @@ export {
   formatWithSeparators,
   truncateAddress,
   truncateHash,
+  truncateWalletForAnalytics,
 } from './format.utils';
 
 export {

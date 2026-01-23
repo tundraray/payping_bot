@@ -1,0 +1,59 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output
+dist
+build
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.sublime-workspace
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Tests
+coverage
+.nyc_output
+*.spec.ts
+*.test.ts
+**/__tests__
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# CI/CD
+.github
+
+# Development tools
+.lefthook.yml
+lefthook.yml
+biome.json
+commitlint.config.js
+drizzle.config.ts
+
+# Temp files
+.temp
+.tmp
+*.pid
+*.seed

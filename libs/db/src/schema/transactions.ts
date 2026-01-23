@@ -18,5 +18,6 @@ export const transactions = pgTable(
   (table) => [
     // Note: hash column unique constraint creates an implicit index, so no explicit index needed
     index('idx_transactions_timestamp').on(table.timestamp),
+    index('idx_transactions_from_address').on(table.fromAddress),
   ],
 );
