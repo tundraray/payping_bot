@@ -44,3 +44,64 @@ btn-unsubscribe = Відписатись
 # Помилки
 error-generic = ⚠️ Щось пішло не так. Спробуйте ще раз.
 error-rate-limit = ⏳ Забагато запитів. Зачекайте трохи.
+
+# Аналітика
+analytics-title = 📊 <b>Аналітика виплат - { $month }</b>
+analytics-month = { $month }
+analytics-changes-from = Зміни позицій відносно { $previousMonth }
+
+# Заголовки таблиці аналітики
+analytics-header-position = #
+analytics-header-wallet = Гаманець
+analytics-header-type = Тип
+analytics-header-prev = Поп.
+analytics-header-change = Зм.
+
+# Підсумки та статус аналітики
+analytics-total = Всього: { $amount } USDT
+analytics-no-data = Немає даних за цей період
+analytics-data-unavailable = Дані аналітики недоступні
+
+# Кнопки навігації по місяцях
+btn-prev-month = ◀ { $month }
+btn-next-month = { $month } ▶
+
+# Заголовки груп класифікації
+analytics-employees-header = 👔 <b>Співробітники ({ $count })</b>
+analytics-freelancers-header = 💼 <b>Фрілансери ({ $count })</b>
+analytics-onetime-header = 🎯 <b>Разові ({ $count })</b>
+analytics-unknown-header = ❓ <b>Невідомі ({ $count })</b>
+analytics-fired-header = 🚫 <b>Звільнені цього місяця ({ $count })</b>
+
+# Значки класифікації
+classify-employee = [С]
+classify-freelancer = [Ф]
+classify-onetime = [Р]
+classify-unknown = [?]
+
+# Індикатори зміни позиції
+position-up = ↑
+position-down = ↓
+position-same = →
+position-new = НОВИЙ
+
+# Сповіщення про зміну зарплати
+salary-increase = 📈 Виявлено підвищення зарплати: { $wallet } +{ $percent }%
+salary-decrease = 📉 Виявлено зниження зарплати: { $wallet } -{ $percent }%
+
+# Сповіщення про звільнення
+fired-notification = ⚠️ Можливе звільнення: { $wallet } (немає виплат { $months } міс.)
+
+# Назви місяців
+month-january = Січень
+month-february = Лютий
+month-march = Березень
+month-april = Квітень
+month-may = Травень
+month-june = Червень
+month-july = Липень
+month-august = Серпень
+month-september = Вересень
+month-october = Жовтень
+month-november = Листопад
+month-december = Грудень

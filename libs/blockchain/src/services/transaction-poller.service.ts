@@ -66,7 +66,9 @@ export class TransactionPollerService implements OnModuleDestroy {
    * Ensures graceful shutdown of the poller.
    */
   async onModuleDestroy(): Promise<void> {
+    this.logger.log('onModuleDestroy called, stopping poller...');
     await this.stopPolling();
+    this.logger.log('Poller cleanup complete');
   }
 
   /**

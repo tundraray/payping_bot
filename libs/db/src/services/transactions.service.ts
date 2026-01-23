@@ -1,10 +1,11 @@
 import type { Transaction, TransactionType } from '@app/blockchain';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, desc, eq, gte, lt } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { transactions } from '../schema';
 import { formatUsdt } from '../utils/usdt.utils';
+import { AnalyticsService } from './analytics.service';
 
 /**
  * TransactionsService provides database operations for blockchain transaction persistence.
@@ -26,6 +27,8 @@ export class TransactionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly configService: ConfigService,
+    @Inject(forwardRef(() => AnalyticsService))
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   /**
@@ -78,12 +81,16 @@ export class TransactionsService {
    * Used by DeduplicationService to persist new transactions after processing.
    * Amount is stored as string to preserve 6-decimal USDT precision.
    *
+   * For outgoing transactions (fromAddress = monitored wallet), triggers
+   * analytics processing to update recipient classification and position.
+   *
    * @param transaction - Transaction to persist
    * @throws Error on unique constraint violation (duplicate hash) or database failure
    *
    * @see AC-5.1: Inserts new transaction row
    * @see AC-5.2: Throws on duplicate hash (unique constraint)
    * @see AC-5.3: Preserves amount precision (6 decimals for USDT)
+   * @see AC-5.4: Triggers analytics processing for outgoing transactions
    */
   async save(transaction: Transaction): Promise<void> {
     try {
@@ -98,6 +105,28 @@ export class TransactionsService {
         contractAddress: transaction.contractAddress,
         raw: transaction.raw,
       });
+
+      // Process analytics for outgoing transactions (payouts from monitored wallet)
+      // Use case-insensitive comparison because TRON addresses can vary in case
+      const monitoredWallet = await this.getMonitoredWalletAddress();
+      if (
+        monitoredWallet &&
+        transaction.fromAddress.toLowerCase() === monitoredWallet.toLowerCase()
+      ) {
+        try {
+          await this.analyticsService.processTransaction(transaction);
+          this.logger.debug('Analytics processed for outgoing transaction', {
+            hash: transaction.hash,
+            toAddress: transaction.toAddress,
+          });
+        } catch (analyticsError) {
+          // Log but don't fail the transaction save - analytics is secondary
+          this.logger.warn('Failed to process analytics for transaction', {
+            hash: transaction.hash,
+            error: analyticsError,
+          });
+        }
+      }
     } catch (error) {
       this.logger.error('Failed to save transaction', {
         hash: transaction.hash,

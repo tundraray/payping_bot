@@ -3,6 +3,7 @@ import {
   formatWithSeparators,
   truncateAddress,
   truncateHash,
+  truncateWalletForAnalytics,
 } from './format.utils';
 
 describe('format.utils', () => {
@@ -88,6 +89,26 @@ describe('format.utils', () => {
 
     it('should not truncate short hashes', () => {
       expect(truncateHash('a1b2c3d48bc1')).toBe('a1b2c3d48bc1');
+    });
+  });
+
+  describe('truncateWalletForAnalytics', () => {
+    /**
+     * AC-2.2: Wallet truncation first 4 + last 3
+     */
+    it('should truncate long addresses to first 4 + last 3 characters', () => {
+      expect(truncateWalletForAnalytics('TXyzTestWalletAddress12345678901234')).toBe('TXyz...234');
+      expect(truncateWalletForAnalytics('TAbcdefghijklmnopqrstuvwxyz')).toBe('TAbc...xyz');
+    });
+
+    it('should not truncate short addresses (<= 10 chars)', () => {
+      expect(truncateWalletForAnalytics('TXyz123')).toBe('TXyz123');
+      expect(truncateWalletForAnalytics('TXyz123abc')).toBe('TXyz123abc');
+    });
+
+    it('should handle edge case at exactly 11 characters', () => {
+      // 11 chars should be truncated: first 4 + ... + last 3 = TXyz...abc
+      expect(truncateWalletForAnalytics('TXyz1234abc')).toBe('TXyz...abc');
     });
   });
 });
