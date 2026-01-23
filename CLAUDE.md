@@ -40,11 +40,14 @@ pnpm run check          # Biome check without auto-fix
 
 ## Architecture
 
-NestJS **standalone application** (no HTTP server) with monorepo structure:
+NestJS application with **minimal HTTP server** (for health checks) and monorepo structure.
+
+> **Why HTTP server?** The app is hosted on render.com which requires an open port for web services (free tier). The HTTP server only exposes a `/health` endpoint for health checks; the bot itself uses grammY long polling, not webhooks.
 
 ```
 src/
-├── main.ts              # Bootstrap with createApplicationContext()
+├── main.ts              # Bootstrap with NestFactory.create(), listens on PORT
+├── health.controller.ts # GET /health endpoint for render.com health checks
 └── app.module.ts        # Root module importing all libs
 
 libs/
