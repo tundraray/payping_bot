@@ -8,7 +8,7 @@ export const salaryHistory = pgTable(
     id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
     recipientWalletId: integer('recipient_wallet_id')
       .notNull()
-      .references(() => recipientWallets.id),
+      .references(() => recipientWallets.id, { onDelete: 'cascade' }),
 
     // Salary change details
     previousAmount: varchar('previous_amount', { length: 78 }).notNull(),

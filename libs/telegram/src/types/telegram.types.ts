@@ -20,6 +20,19 @@ export interface AnalyticsData {
 }
 
 /**
+ * Payout statistics for /start command display.
+ * All values are approximate based on historical data.
+ */
+export interface PayoutStats {
+  /** Average number of wallets per month (approximate) */
+  avgWalletCount: number;
+  /** Outgoing payments this month */
+  monthlyPayouts: string;
+  /** Wallet count this month */
+  currentWalletCount: number;
+}
+
+/**
  * Callback action constants for inline buttons.
  */
 export const CALLBACK_ACTIONS = {

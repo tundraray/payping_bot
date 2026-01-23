@@ -48,8 +48,11 @@ describe('StartHandler', () => {
         {
           provide: TransactionsService,
           useValue: {
-            getMonthlySum: jest.fn(),
-            getRollingAverage: jest.fn(),
+            getMonthlySum: jest.fn().mockResolvedValue('0'),
+            getRollingAverage: jest.fn().mockResolvedValue('0.00'),
+            getMonthlyOutgoingSum: jest.fn().mockResolvedValue('0'),
+            getAverageWalletCount: jest.fn().mockResolvedValue(0),
+            getMonthlyWalletCount: jest.fn().mockResolvedValue(0),
           },
         },
         {

@@ -105,7 +105,9 @@ describe('i18n.utils', () => {
           monthTotal: '1,500.00',
           expectedAmount: '3,000.00',
           time: '12:00',
-          hash: '0xabc123',
+          avgWallets: '100',
+          currentWallets: '95',
+          payoutsAmount: '50,000.00',
         });
         expect(result).toContain('500.00');
         expect(result).toContain('1,500.00');
@@ -209,6 +211,7 @@ describe('i18n.utils', () => {
         'unsubscribe-not-subscribed',
         'btn-subscribe',
         'btn-unsubscribe',
+        'btn-view-tronscan',
         'error-generic',
         'error-rate-limit',
       ];
@@ -226,7 +229,9 @@ describe('i18n.utils', () => {
           monthTotal: '500.00',
           expectedAmount: '1,000.00',
           time: '12:00',
-          hash: '0xabc123',
+          avgWallets: '100',
+          currentWallets: '95',
+          payoutsAmount: '50,000.00',
         },
       };
 

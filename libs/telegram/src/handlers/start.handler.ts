@@ -2,7 +2,7 @@ import { SubscriptionsService, TransactionsService, UsersService } from '@app/db
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { InlineKeyboard } from 'grammy';
 import { TelegramService } from '../telegram.service';
-import type { AnalyticsData, BotContext } from '../types/telegram.types';
+import type { AnalyticsData, BotContext, PayoutStats } from '../types/telegram.types';
 import { CALLBACK_ACTIONS } from '../types/telegram.types';
 import { formatUsdtDisplay } from '../utils';
 
@@ -63,11 +63,14 @@ export class StartHandler implements OnModuleInit {
       const currentYear = now.getUTCFullYear();
       const currentMonth = now.getUTCMonth() + 1; // JavaScript months are 0-indexed, need 1-12
 
-      const currentMonthSum = await this.transactionsService.getMonthlySum(
-        currentYear,
-        currentMonth,
-      );
-      const rollingAverage = await this.transactionsService.getRollingAverage(3);
+      const [currentMonthSum, rollingAverage, monthlyPayouts, avgWalletCount, currentWalletCount] =
+        await Promise.all([
+          this.transactionsService.getMonthlySum(currentYear, currentMonth),
+          this.transactionsService.getRollingAverage(3),
+          this.transactionsService.getMonthlyOutgoingSum(currentYear, currentMonth),
+          this.transactionsService.getAverageWalletCount(3),
+          this.transactionsService.getMonthlyWalletCount(currentYear, currentMonth),
+        ]);
 
       // Determine months used: if rolling average > 0, we have historical data
       const monthsUsed = Number.parseFloat(rollingAverage) > 0 ? 3 : 0;
@@ -78,8 +81,14 @@ export class StartHandler implements OnModuleInit {
         monthsUsed,
       };
 
+      const payoutStats: PayoutStats = {
+        avgWalletCount,
+        monthlyPayouts,
+        currentWalletCount,
+      };
+
       // Build message with analytics
-      const message = this.buildMessage(ctx, isSubscribed, analytics);
+      const message = this.buildMessage(ctx, isSubscribed, analytics, payoutStats);
       const keyboard = this.buildKeyboard(ctx, isSubscribed);
 
       await ctx.reply(message, {
@@ -95,7 +104,12 @@ export class StartHandler implements OnModuleInit {
   /**
    * Build the welcome message with optional analytics.
    */
-  private buildMessage(ctx: BotContext, isSubscribed: boolean, analytics?: AnalyticsData): string {
+  private buildMessage(
+    ctx: BotContext,
+    isSubscribed: boolean,
+    analytics?: AnalyticsData,
+    payoutStats?: PayoutStats,
+  ): string {
     const lines: string[] = [];
 
     // Welcome
@@ -121,8 +135,22 @@ export class StartHandler implements OnModuleInit {
         // No historical data
         lines.push(ctx.t('analytics-no-history', { currentAmount }));
       }
-      lines.push('');
     }
+
+    // Payout statistics section (approximate values)
+    if (payoutStats && payoutStats.avgWalletCount > 0) {
+      const payoutsAmount = formatUsdtDisplay(payoutStats.monthlyPayouts);
+      lines.push('');
+      lines.push(
+        ctx.t('payout-stats', {
+          avgWallets: payoutStats.avgWalletCount.toString(),
+          currentWallets: payoutStats.currentWalletCount.toString(),
+          payoutsAmount,
+        }),
+      );
+    }
+
+    lines.push('');
 
     // Subscription status
     lines.push(isSubscribed ? ctx.t('status-subscribed') : ctx.t('status-not-subscribed'));

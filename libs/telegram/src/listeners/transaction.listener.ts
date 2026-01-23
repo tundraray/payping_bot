@@ -3,6 +3,7 @@ import { TRANSACTION_NEW_EVENT } from '@app/blockchain';
 import { SubscriptionsService, TransactionsService } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { InlineKeyboard } from 'grammy';
 import { TelegramService } from '../telegram.service';
 import { formatUsdtDisplay, translate } from '../utils';
 
@@ -58,13 +59,24 @@ export class TransactionListener {
 
       this.logger.log(`Sending notifications to ${subscribers.length} subscribers`);
 
-      // Fetch monthly statistics for progress display
-      const now = new Date();
-      const monthTotalRaw = await this.transactionsService.getMonthlySum(
-        now.getUTCFullYear(),
-        now.getUTCMonth() + 1,
-      );
-      const expectedAmountFormatted = await this.transactionsService.getRollingAverage(3);
+      // Fetch monthly statistics for progress display (based on transaction date, not current date)
+      const txDate = new Date(transaction.timestamp);
+      const txYear = txDate.getUTCFullYear();
+      const txMonth = txDate.getUTCMonth() + 1;
+
+      const [
+        monthTotalRaw,
+        expectedAmountFormatted,
+        monthlyPayoutsRaw,
+        avgWalletCount,
+        currentWalletCount,
+      ] = await Promise.all([
+        this.transactionsService.getMonthlySum(txYear, txMonth),
+        this.transactionsService.getRollingAverage(3, transaction.timestamp),
+        this.transactionsService.getMonthlyOutgoingSum(txYear, txMonth),
+        this.transactionsService.getAverageWalletCount(3, transaction.timestamp),
+        this.transactionsService.getMonthlyWalletCount(txYear, txMonth),
+      ]);
 
       // Send notifications to all subscribers
       let successCount = 0;
@@ -81,11 +93,22 @@ export class TransactionListener {
             lang,
             monthTotalRaw,
             expectedAmountFormatted,
+            {
+              monthlyPayoutsRaw,
+              avgWalletCount,
+              currentWalletCount,
+            },
           );
+
+          // Create inline keyboard with Tronscan link button
+          const buttonText = translate(lang, 'btn-view-tronscan');
+          const tronscanUrl = `https://tronscan.org/#/transaction/${transaction.hash}`;
+          const keyboard = new InlineKeyboard().url(buttonText, tronscanUrl);
 
           const bot = this.telegramService.getBot();
           await bot.api.sendMessage(user.telegramId, message, {
             parse_mode: 'HTML',
+            reply_markup: keyboard,
           });
 
           successCount++;
@@ -139,6 +162,7 @@ export class TransactionListener {
    * @param languageCode - Subscriber's language preference (e.g., 'en', 'ru', 'uk')
    * @param monthTotalRaw - Raw monthly total amount
    * @param expectedAmountFormatted - Pre-formatted expected amount (3-month average)
+   * @param payoutStats - Payout statistics (approximate values)
    * @returns Localized notification message
    */
   private formatNotificationMessage(
@@ -146,6 +170,11 @@ export class TransactionListener {
     languageCode: string,
     monthTotalRaw: string,
     expectedAmountFormatted: string,
+    payoutStats: {
+      monthlyPayoutsRaw: string;
+      avgWalletCount: number;
+      currentWalletCount: number;
+    },
   ): string {
     const amount = formatUsdtDisplay(transaction.amount);
     const monthTotal = formatUsdtDisplay(monthTotalRaw);
@@ -153,14 +182,16 @@ export class TransactionListener {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
-    const hash = transaction.hash; // Full hash for Tronscan link
+    const payoutsAmount = formatUsdtDisplay(payoutStats.monthlyPayoutsRaw);
 
     return translate(languageCode, 'notification', {
       amount,
       monthTotal,
       expectedAmount: expectedAmountFormatted,
       time,
-      hash,
+      avgWallets: payoutStats.avgWalletCount.toString(),
+      currentWallets: payoutStats.currentWalletCount.toString(),
+      payoutsAmount,
     });
   }
 

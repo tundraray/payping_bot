@@ -738,4 +738,204 @@ describe('Analytics Integration Tests', () => {
       expect(result.fired.length).toBe(1);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Previous Month Baseline
+  // ---------------------------------------------------------------------------
+  describe('Previous Month Baseline', () => {
+    /**
+     * Wallets from previous month should appear in current month analytics
+     * with amount=0 and positionChange='miss' if they didn't receive payment
+     */
+    conditionalIt('includes wallets from previous month with miss indicator', async () => {
+      // Arrange: Create data for December 2025 and January 2026
+      const dec2025Start = Date.UTC(2025, 11, 1);
+      const jan2026Start = Date.UTC(2026, 0, 1);
+
+      // Recipient that was in December but not in January
+      const decOnlyRecipient = 'TDecOnlyRecipient1234567890123456';
+      // Recipient that is in both months
+      const bothMonthsRecipient = 'TBothMonthsRecipient12345678901';
+      // Recipient that is only in January (new)
+      const janOnlyRecipient = 'TJanOnlyRecipient12345678901234';
+
+      // Create wallets
+      await recipientWalletsService.upsertMany([
+        {
+          address: decOnlyRecipient,
+          firstSeenAt: new Date(dec2025Start + 1000),
+          lastPaymentAt: new Date(dec2025Start + 1000),
+          classification: 'EMPLOYEE',
+        },
+        {
+          address: bothMonthsRecipient,
+          firstSeenAt: new Date(dec2025Start + 2000),
+          lastPaymentAt: new Date(jan2026Start + 1000),
+          classification: 'EMPLOYEE',
+        },
+        {
+          address: janOnlyRecipient,
+          firstSeenAt: new Date(jan2026Start + 2000),
+          lastPaymentAt: new Date(jan2026Start + 2000),
+          classification: 'EMPLOYEE',
+        },
+      ]);
+
+      // December transactions
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: decOnlyRecipient,
+          timestamp: dec2025Start + 1000,
+          amount: '5000000000',
+        }),
+      );
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: bothMonthsRecipient,
+          timestamp: dec2025Start + 2000,
+          amount: '5000000000',
+        }),
+      );
+
+      // January transactions (only bothMonthsRecipient and janOnlyRecipient)
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: bothMonthsRecipient,
+          timestamp: jan2026Start + 1000,
+          amount: '5000000000',
+        }),
+      );
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: janOnlyRecipient,
+          timestamp: jan2026Start + 2000,
+          amount: '5000000000',
+        }),
+      );
+
+      // Calculate positions for both months
+      await analyticsService.calculatePositionsWithinGroup('2025-12', 'EMPLOYEE');
+      await analyticsService.calculatePositionsWithinGroup('2026-01', 'EMPLOYEE');
+
+      // Act: Get January analytics
+      const result = await analyticsService.getGroupedAnalytics('2026-01');
+
+      // Assert: All three wallets should be in the result
+      expect(result.employees.length).toBe(3);
+
+      // decOnlyRecipient should be marked as 'miss' with amount=0
+      const missedRecipient = result.employees.find((e) => e.walletAddress === decOnlyRecipient);
+      expect(missedRecipient).toBeDefined();
+      expect(missedRecipient?.positionChange).toBe('miss');
+      expect(missedRecipient?.amount).toBe('0');
+      expect(missedRecipient?.previousPosition).toBe(1); // Was #1 in December
+
+      // bothMonthsRecipient should show position change (same, up, or down)
+      const bothMonths = result.employees.find((e) => e.walletAddress === bothMonthsRecipient);
+      expect(bothMonths).toBeDefined();
+      expect(['up', 'down', 'same']).toContain(bothMonths?.positionChange);
+      expect(Number(bothMonths?.amount)).toBeGreaterThan(0);
+
+      // janOnlyRecipient should be marked as 'new'
+      const newRecipient = result.employees.find((e) => e.walletAddress === janOnlyRecipient);
+      expect(newRecipient).toBeDefined();
+      expect(newRecipient?.positionChange).toBe('new');
+      expect(newRecipient?.previousPosition).toBeNull();
+    });
+
+    /**
+     * Missed wallets should appear after current month wallets in the list
+     */
+    conditionalIt('sorts missed wallets after current month wallets', async () => {
+      // Arrange
+      const dec2025Start = Date.UTC(2025, 11, 1);
+      const jan2026Start = Date.UTC(2026, 0, 1);
+
+      const missedWallet = 'TMissedWallet1234567890123456789';
+      const activeWallet = 'TActiveWallet1234567890123456789';
+
+      await recipientWalletsService.upsertMany([
+        {
+          address: missedWallet,
+          firstSeenAt: new Date(dec2025Start + 1000),
+          lastPaymentAt: new Date(dec2025Start + 1000),
+          classification: 'EMPLOYEE',
+        },
+        {
+          address: activeWallet,
+          firstSeenAt: new Date(jan2026Start + 1000),
+          lastPaymentAt: new Date(jan2026Start + 1000),
+          classification: 'EMPLOYEE',
+        },
+      ]);
+
+      // December transaction only
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: missedWallet,
+          timestamp: dec2025Start + 1000,
+          amount: '5000000000',
+        }),
+      );
+
+      // January transaction only
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: activeWallet,
+          timestamp: jan2026Start + 1000,
+          amount: '5000000000',
+        }),
+      );
+
+      await analyticsService.calculatePositionsWithinGroup('2025-12', 'EMPLOYEE');
+      await analyticsService.calculatePositionsWithinGroup('2026-01', 'EMPLOYEE');
+
+      // Act
+      const result = await analyticsService.getGroupedAnalytics('2026-01');
+
+      // Assert: Active wallet should come before missed wallet
+      expect(result.employees.length).toBe(2);
+      expect(result.employees[0].walletAddress).toBe(activeWallet);
+      expect(result.employees[0].positionChange).toBe('new');
+      expect(result.employees[1].walletAddress).toBe(missedWallet);
+      expect(result.employees[1].positionChange).toBe('miss');
+    });
+
+    /**
+     * First month should work correctly (no previous month data)
+     */
+    conditionalIt('handles first month with no previous data', async () => {
+      // Arrange: Only January data, no December
+      const jan2026Start = Date.UTC(2026, 0, 1);
+      const recipient = 'TFirstMonthRecipient12345678901';
+
+      await recipientWalletsService.upsertMany([
+        {
+          address: recipient,
+          firstSeenAt: new Date(jan2026Start + 1000),
+          lastPaymentAt: new Date(jan2026Start + 1000),
+          classification: 'EMPLOYEE',
+        },
+      ]);
+
+      await transactionsService.save(
+        createTestTransaction({
+          toAddress: recipient,
+          timestamp: jan2026Start + 1000,
+          amount: '5000000000',
+        }),
+      );
+
+      await analyticsService.calculatePositionsWithinGroup('2026-01', 'EMPLOYEE');
+
+      // Act
+      const result = await analyticsService.getGroupedAnalytics('2026-01');
+
+      // Assert: Should work, wallet marked as 'new'
+      expect(result.employees.length).toBe(1);
+      expect(result.employees[0].walletAddress).toBe(recipient);
+      expect(result.employees[0].positionChange).toBe('new');
+      expect(result.employees[0].previousPosition).toBeNull();
+    });
+  });
 });

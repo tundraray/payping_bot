@@ -33,6 +33,9 @@ describe('TransactionListener', () => {
           useValue: {
             getMonthlySum: jest.fn().mockResolvedValue('5000000000'), // 5000 USDT
             getRollingAverage: jest.fn().mockResolvedValue('10,000.00'),
+            getMonthlyOutgoingSum: jest.fn().mockResolvedValue('50000000000'), // 50000 USDT
+            getAverageWalletCount: jest.fn().mockResolvedValue(100),
+            getMonthlyWalletCount: jest.fn().mockResolvedValue(95),
           },
         },
         {
@@ -148,7 +151,6 @@ describe('TransactionListener', () => {
       expect(message).toMatch(/1,500\.25.*USDT/); // Amount with thousand separator
       expect(message).toMatch(/5,000\.00/); // Month total
       expect(message).toMatch(/10,000\.00/); // Expected amount
-      expect(message).toContain('tronscan.org'); // Link to Tronscan
     });
 
     it('should handle empty subscriber list gracefully', async () => {
@@ -245,26 +247,31 @@ describe('TransactionListener', () => {
       expect(message).toMatch(/1,234,567\.89.*USDT/);
     });
 
-    it('should include full hash in Tronscan link', async () => {
+    it('should include Tronscan link as inline button', async () => {
       subscriptionsService.getActiveSubscribers.mockResolvedValue([createMockUser()]);
 
       const fullHash = 'a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0';
       const transaction = createMockTransaction({ hash: fullHash });
       await listener.onTransactionNew(createMockEvent(transaction));
 
-      const message = mockBot.api.sendMessage.mock.calls[0][1] as string;
-      // Fluent adds Unicode isolation marks around variables
-      expect(message).toContain('tronscan.org/#/transaction/');
-      expect(message).toContain(fullHash);
+      const options = mockBot.api.sendMessage.mock.calls[0][2];
+      expect(options).toHaveProperty('reply_markup');
+      // Check that the inline keyboard contains the Tronscan URL
+      const keyboard = options.reply_markup;
+      expect(keyboard.inline_keyboard[0][0].url).toBe(
+        `https://tronscan.org/#/transaction/${fullHash}`,
+      );
     });
 
-    it('should fetch monthly statistics before sending notifications', async () => {
+    it('should fetch monthly statistics based on transaction date', async () => {
       subscriptionsService.getActiveSubscribers.mockResolvedValue([createMockUser()]);
 
-      await listener.onTransactionNew(createMockEvent());
+      const transaction = createMockTransaction({ timestamp: 1640000000000 });
+      await listener.onTransactionNew(createMockEvent(transaction));
 
-      expect(transactionsService.getMonthlySum).toHaveBeenCalled();
-      expect(transactionsService.getRollingAverage).toHaveBeenCalledWith(3);
+      // Should use transaction timestamp (Dec 2021), not current date
+      expect(transactionsService.getMonthlySum).toHaveBeenCalledWith(2021, 12);
+      expect(transactionsService.getRollingAverage).toHaveBeenCalledWith(3, 1640000000000);
     });
   });
 });
