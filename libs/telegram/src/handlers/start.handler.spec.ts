@@ -19,6 +19,7 @@ describe('StartHandler', () => {
     username: 'testuser',
     firstName: 'Test',
     lastName: null,
+    languageCode: 'en',
     createdAt: new Date(),
     updatedAt: new Date(),
   };

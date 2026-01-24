@@ -21,6 +21,9 @@ describe('blockchainConfig', () => {
     delete process.env.BACKOFF_MULTIPLIER;
     delete process.env.BACKOFF_JITTER_MS;
     delete process.env.USDT_CONTRACT_ADDRESS;
+    delete process.env.PAYOUT_BALANCE_THRESHOLD_USDT;
+    delete process.env.PAYOUT_TIMEOUT_MINUTES;
+    delete process.env.PAYOUT_CHECK_INTERVAL_MS;
   });
 
   afterAll(() => {
@@ -65,6 +68,14 @@ describe('blockchainConfig', () => {
       const config = blockchainConfig() as BlockchainConfig;
 
       expect(config.contracts.usdt).toBe('TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t');
+    });
+
+    it('should return default payout configuration', () => {
+      const config = blockchainConfig() as BlockchainConfig;
+
+      expect(config.payout.balanceThresholdUsdt).toBe(1000);
+      expect(config.payout.timeoutMinutes).toBe(30);
+      expect(config.payout.checkIntervalMs).toBe(60000);
     });
   });
 
@@ -125,6 +136,18 @@ describe('blockchainConfig', () => {
       const config = blockchainConfig() as BlockchainConfig;
 
       expect(config.contracts.usdt).toBe('TCustomContractAddress');
+    });
+
+    it('should override payout settings from environment', () => {
+      process.env.PAYOUT_BALANCE_THRESHOLD_USDT = '500';
+      process.env.PAYOUT_TIMEOUT_MINUTES = '15';
+      process.env.PAYOUT_CHECK_INTERVAL_MS = '30000';
+
+      const config = blockchainConfig() as BlockchainConfig;
+
+      expect(config.payout.balanceThresholdUsdt).toBe(500);
+      expect(config.payout.timeoutMinutes).toBe(15);
+      expect(config.payout.checkIntervalMs).toBe(30000);
     });
   });
 

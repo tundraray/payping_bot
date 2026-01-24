@@ -118,3 +118,29 @@ month-september = Сентябрь
 month-october = Октябрь
 month-november = Ноябрь
 month-december = Декабрь
+
+# Уведомление о начале сессии выплат
+payout-started = 🚀 <b>Выплата началась</b>
+
+    Кошелёк начал выплату средств.
+    Вы будете получать уведомления о каждом переводе.
+
+    { $time }
+
+# Уведомление об отдельной исходящей транзакции
+payout-transaction = 💸 <b>Перевод #{ $txNumber }</b>
+
+    <b>{ $amount } USDT</b> → { $recipient }
+
+    Итого за сессию: { $sessionTotal } USDT
+
+# Уведомление о завершении сессии выплат
+payout-completed = ✅ <b>Выплата завершена</b>
+
+    📊 <b>Итоги</b>
+    • Переводов: { $txCount }
+    • Всего выплачено: { $totalAmount } USDT
+    • Длительность: { $duration } мин
+    • Остаток на балансе: { $endBalance } USDT
+
+    { $time }

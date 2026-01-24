@@ -1,6 +1,19 @@
 import { registerAs } from '@nestjs/config';
 
 /**
+ * Payout session configuration interface.
+ * Defines settings for payout session detection and monitoring.
+ */
+export interface PayoutConfig {
+  /** Balance threshold in USDT (default: 1000) - session ends when balance drops below this */
+  balanceThresholdUsdt: number;
+  /** Timeout in minutes (default: 30) - session ends after this duration of inactivity */
+  timeoutMinutes: number;
+  /** Check interval in milliseconds (default: 60000) - how often to check timeout and balance */
+  checkIntervalMs: number;
+}
+
+/**
  * Blockchain configuration interface.
  * Defines all settings required for TronGrid API integration,
  * polling behavior, caching, error handling, and smart contracts.
@@ -49,6 +62,8 @@ export interface BlockchainConfig {
     /** USDT TRC20 contract address on TRON mainnet */
     usdt: string;
   };
+  /** Payout session configuration */
+  payout: PayoutConfig;
 }
 
 /**
@@ -70,6 +85,9 @@ export interface BlockchainConfig {
  * - BACKOFF_MULTIPLIER: Backoff multiplier (default: 2)
  * - BACKOFF_JITTER_MS: Jitter range (default: 500)
  * - USDT_CONTRACT_ADDRESS: USDT contract (default: TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t)
+ * - PAYOUT_BALANCE_THRESHOLD_USDT: Balance threshold for session end (default: 1000)
+ * - PAYOUT_TIMEOUT_MINUTES: Inactivity timeout for session end (default: 30)
+ * - PAYOUT_CHECK_INTERVAL_MS: Check interval for timeout/balance (default: 60000)
  */
 export default registerAs(
   'blockchain',
@@ -97,6 +115,11 @@ export default registerAs(
     },
     contracts: {
       usdt: process.env.USDT_CONTRACT_ADDRESS || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+    },
+    payout: {
+      balanceThresholdUsdt: parseInt(process.env.PAYOUT_BALANCE_THRESHOLD_USDT || '1000', 10),
+      timeoutMinutes: parseInt(process.env.PAYOUT_TIMEOUT_MINUTES || '30', 10),
+      checkIntervalMs: parseInt(process.env.PAYOUT_CHECK_INTERVAL_MS || '60000', 10),
     },
   }),
 );

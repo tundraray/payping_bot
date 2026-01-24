@@ -7,6 +7,7 @@ import { USDT_CONTRACT_ADDRESS } from '../constants/contracts';
 import { TRANSACTION_NEW_EVENT } from '../events/transaction.events';
 import { type Transaction, TransactionType } from '../interfaces/transaction.interface';
 import { DeduplicationService } from './deduplication.service';
+import { PayoutSessionService } from './payout-session.service';
 import { TransactionProcessorService } from './transaction-processor.service';
 
 /**
@@ -29,6 +30,7 @@ describe('TransactionProcessorService', () => {
   let processorService: TransactionProcessorService;
   let deduplicationService: jest.Mocked<DeduplicationService>;
   let eventEmitter: jest.Mocked<EventEmitter2>;
+  let payoutSessionService: jest.Mocked<PayoutSessionService>;
 
   const mockWalletAddress = 'TMonitoredWallet123456789012345678901';
 
@@ -49,12 +51,19 @@ describe('TransactionProcessorService', () => {
             emit: jest.fn().mockReturnValue(true),
           },
         },
+        {
+          provide: PayoutSessionService,
+          useValue: {
+            handleOutgoingTransaction: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     processorService = module.get<TransactionProcessorService>(TransactionProcessorService);
     deduplicationService = module.get(DeduplicationService);
     eventEmitter = module.get(EventEmitter2);
+    payoutSessionService = module.get(PayoutSessionService);
   });
 
   // ===========================================================================
@@ -298,6 +307,98 @@ describe('TransactionProcessorService', () => {
 
       expect(deduplicationService.isDuplicate).toHaveBeenCalledWith(incomingTx.hash);
       expect(callOrder).toEqual(['isDuplicate', 'markProcessed']);
+    });
+  });
+
+  // ===========================================================================
+  // Payout Session Hook - Task 08 tests
+  // ===========================================================================
+  describe('Payout session hook for outgoing transactions', () => {
+    /**
+     * @category core-functionality
+     * @complexity medium
+     * @covers Task-08 - Hook outgoing transactions to PayoutSessionService
+     */
+    it('should call handleOutgoingTransaction for outgoing transactions in processUSDTTransactions', async () => {
+      const outgoingTx = createMockTransaction('outgoing-tx-001');
+      outgoingTx.fromAddress = mockWalletAddress;
+      outgoingTx.toAddress = 'TSomeRecipient12345678901234567890';
+
+      deduplicationService.isDuplicate.mockResolvedValueOnce(false);
+      deduplicationService.markProcessed.mockResolvedValueOnce(undefined);
+      payoutSessionService.handleOutgoingTransaction.mockResolvedValueOnce(undefined);
+
+      await processorService.processUSDTTransactions([outgoingTx], mockWalletAddress);
+
+      expect(payoutSessionService.handleOutgoingTransaction).toHaveBeenCalledWith(outgoingTx);
+    });
+
+    /**
+     * @category core-functionality
+     * @complexity low
+     * @covers Task-08 - Do NOT call for incoming transactions
+     */
+    it('should NOT call handleOutgoingTransaction for incoming transactions', async () => {
+      const incomingTx = createMockTransaction('incoming-tx-001');
+      incomingTx.fromAddress = 'TSomeSender1234567890123456789012';
+      incomingTx.toAddress = mockWalletAddress;
+
+      deduplicationService.isDuplicate.mockResolvedValueOnce(false);
+      deduplicationService.markProcessed.mockResolvedValueOnce(undefined);
+
+      await processorService.processUSDTTransactions([incomingTx], mockWalletAddress);
+
+      expect(payoutSessionService.handleOutgoingTransaction).not.toHaveBeenCalled();
+    });
+
+    /**
+     * @category edge-case
+     * @complexity medium
+     * @covers Task-08 - Error handling for payout session
+     */
+    it('should continue processing when payout session handling fails', async () => {
+      const outgoingTx1 = createMockTransaction('outgoing-tx-fail');
+      outgoingTx1.fromAddress = mockWalletAddress;
+      outgoingTx1.toAddress = 'TRecipient00000001234567890123456';
+
+      const outgoingTx2 = createMockTransaction('outgoing-tx-success');
+      outgoingTx2.fromAddress = mockWalletAddress;
+      outgoingTx2.toAddress = 'TRecipient00000001234567890123457';
+
+      deduplicationService.isDuplicate.mockResolvedValue(false);
+      deduplicationService.markProcessed.mockResolvedValue(undefined);
+
+      payoutSessionService.handleOutgoingTransaction
+        .mockRejectedValueOnce(new Error('Payout session error'))
+        .mockResolvedValueOnce(undefined);
+
+      // Should not throw despite first tx handler error
+      const result = await processorService.processUSDTTransactions(
+        [outgoingTx1, outgoingTx2],
+        mockWalletAddress,
+      );
+
+      // Both transactions should be processed (saved to DB)
+      expect(result.processed).toBe(2);
+      // Both should have called handleOutgoingTransaction
+      expect(payoutSessionService.handleOutgoingTransaction).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * @category edge-case
+     * @complexity low
+     * @covers Task-08 - Skip duplicate outgoing transactions
+     */
+    it('should NOT call handleOutgoingTransaction for duplicate outgoing transactions', async () => {
+      const duplicateOutgoingTx = createMockTransaction('duplicate-outgoing');
+      duplicateOutgoingTx.fromAddress = mockWalletAddress;
+      duplicateOutgoingTx.toAddress = 'TRecipient00000001234567890123456';
+
+      deduplicationService.isDuplicate.mockResolvedValueOnce(true);
+
+      await processorService.processUSDTTransactions([duplicateOutgoingTx], mockWalletAddress);
+
+      expect(payoutSessionService.handleOutgoingTransaction).not.toHaveBeenCalled();
     });
   });
 });
