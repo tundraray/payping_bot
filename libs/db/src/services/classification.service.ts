@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { salaryHistory } from '../schema';
+import { maskWalletAddress } from '../utils/mask.utils';
 import { type Classification, RecipientWalletsService } from './recipient-wallets.service';
 
 export interface RegularityResult {
@@ -106,25 +107,14 @@ export class ClassificationService {
   ): Promise<ClassificationResult> {
     const wallet = await this.recipientWalletsService.findByAddress(walletAddress);
     const amount = Number.parseFloat(newPayment.amount);
-
-    this.logger.debug('Evaluating classification', {
-      walletAddress: `${walletAddress.slice(0, 8)}...`,
-      newPaymentAmount: newPayment.amount,
-      parsedAmount: amount,
-      threshold: ClassificationService.MIN_SIGNIFICANT_AMOUNT,
-      isAboveThreshold: amount >= ClassificationService.MIN_SIGNIFICANT_AMOUNT,
-      existingWallet: !!wallet,
-      paymentsCount: payments.length,
-    });
+    const maskedWallet = maskWalletAddress(walletAddress);
 
     if (!wallet) {
       // New wallet - initial classification
       const classification: Classification =
         amount < ClassificationService.MIN_SIGNIFICANT_AMOUNT ? 'UNKNOWN' : 'ONE_TIME';
 
-      this.logger.log(
-        `New wallet classification: ${walletAddress.slice(0, 8)}... -> ${classification} (amount: ${amount}, threshold: ${ClassificationService.MIN_SIGNIFICANT_AMOUNT})`,
-      );
+      this.logger.log(`New wallet: ${maskedWallet} -> ${classification}`);
 
       return {
         classification,
@@ -137,7 +127,7 @@ export class ClassificationService {
 
     // Handle rehire case (AC-7.1: FIRED -> EMPLOYEE on new payment)
     if (wallet.classification === 'FIRED') {
-      this.logger.log(`Rehire detected: ${walletAddress}`);
+      this.logger.log(`Rehire: ${maskedWallet} FIRED -> EMPLOYEE`);
 
       return {
         classification: 'EMPLOYEE',
@@ -158,9 +148,7 @@ export class ClassificationService {
         wallet.classification === 'UNKNOWN' &&
         amount >= ClassificationService.MIN_SIGNIFICANT_AMOUNT
       ) {
-        this.logger.log(
-          `Upgrading classification: ${walletAddress.slice(0, 8)}... UNKNOWN -> ONE_TIME (amount ${amount} >= threshold ${ClassificationService.MIN_SIGNIFICANT_AMOUNT})`,
-        );
+        this.logger.log(`Upgrade: ${maskedWallet} UNKNOWN -> ONE_TIME`);
         return {
           classification: 'ONE_TIME',
           changed: true,
@@ -168,9 +156,6 @@ export class ClassificationService {
         };
       }
 
-      this.logger.debug(
-        `Keeping classification: ${walletAddress.slice(0, 8)}... -> ${wallet.classification} (only ${totalPayments} payment(s), need ${ClassificationService.MIN_PAYMENTS_FOR_PATTERN}+ for pattern analysis)`,
-      );
       return {
         classification: wallet.classification,
         changed: false,
@@ -179,9 +164,6 @@ export class ClassificationService {
 
     // Max amount must be >= 500 USDT for EMPLOYEE/FREELANCER
     if (maxAmount < ClassificationService.MIN_SIGNIFICANT_AMOUNT) {
-      this.logger.debug(
-        `Keeping classification: ${walletAddress.slice(0, 8)}... -> ${wallet.classification} (max amount ${maxAmount} < threshold ${ClassificationService.MIN_SIGNIFICANT_AMOUNT})`,
-      );
       return {
         classification: wallet.classification,
         changed: false,
@@ -191,21 +173,11 @@ export class ClassificationService {
     // Calculate regularity using the new algorithm
     const newPaymentTimestamp =
       newPayment.timestamp instanceof Date ? newPayment.timestamp.getTime() : newPayment.timestamp;
-    const { uniqueMonths, spanMonths, regularity } = this.calculateRegularity(
+    const { spanMonths, regularity } = this.calculateRegularity(
       allPayments,
       wallet.firstSeenAt,
       newPaymentTimestamp,
     );
-
-    this.logger.debug('Pattern analysis', {
-      walletAddress: `${walletAddress.slice(0, 8)}...`,
-      paymentsCount: totalPayments,
-      uniqueMonths,
-      spanMonths,
-      regularity,
-      regularityThreshold: ClassificationService.EMPLOYEE_REGULARITY_THRESHOLD,
-      currentClassification: wallet.classification,
-    });
 
     // Span must be >= 3 months for EMPLOYEE/FREELANCER
     if (spanMonths < ClassificationService.MIN_SPAN_MONTHS) {
@@ -214,18 +186,13 @@ export class ClassificationService {
         wallet.classification === 'UNKNOWN' &&
         maxAmount >= ClassificationService.MIN_SIGNIFICANT_AMOUNT
       ) {
-        this.logger.debug(
-          `Classification decision: ${walletAddress.slice(0, 8)}... -> ONE_TIME (span ${spanMonths} < ${ClassificationService.MIN_SPAN_MONTHS} months, upgrading from UNKNOWN)`,
-        );
+        this.logger.log(`Upgrade: ${maskedWallet} UNKNOWN -> ONE_TIME`);
         return {
           classification: 'ONE_TIME',
           changed: true,
           previousClassification: 'UNKNOWN',
         };
       }
-      this.logger.debug(
-        `Keeping classification: ${walletAddress.slice(0, 8)}... -> ${wallet.classification} (span ${spanMonths} < ${ClassificationService.MIN_SPAN_MONTHS} months)`,
-      );
       return {
         classification: wallet.classification,
         changed: false,
@@ -236,18 +203,11 @@ export class ClassificationService {
     const newClassification: Classification =
       regularity >= ClassificationService.EMPLOYEE_REGULARITY_THRESHOLD ? 'EMPLOYEE' : 'FREELANCER';
 
-    // Log classification decision
-    this.logger.debug('Classification decision', {
-      walletAddress: `${walletAddress.slice(0, 8)}...`,
-      decision: newClassification,
-      reason: `${spanMonths} months span, ${uniqueMonths} unique months, regularity ${(regularity * 100).toFixed(0)}% ${regularity >= ClassificationService.EMPLOYEE_REGULARITY_THRESHOLD ? '>=' : '<'} 70%`,
-    });
-
     const changed = newClassification !== previousClassification;
 
     if (changed) {
       this.logger.log(
-        `Classification CHANGED: ${walletAddress.slice(0, 8)}... ${previousClassification} -> ${newClassification}`,
+        `Classification: ${maskedWallet} ${previousClassification} -> ${newClassification} (regularity ${(regularity * 100).toFixed(0)}%)`,
       );
     }
 
@@ -318,7 +278,7 @@ export class ClassificationService {
       });
 
       this.logger.log(
-        `Salary change detected: ${walletAddress} ${isIncrease ? '+' : '-'}${changePercentFormatted.toFixed(1)}%`,
+        `Salary change: ${maskWalletAddress(walletAddress)} ${isIncrease ? '+' : '-'}${changePercentFormatted.toFixed(0)}%`,
       );
 
       return {
@@ -367,7 +327,7 @@ export class ClassificationService {
           });
 
           this.logger.log(
-            `Marked as fired: ${wallet.address} (${monthsDiff} months without payment)`,
+            `Fired: ${maskWalletAddress(wallet.address)} (${monthsDiff} months inactive)`,
           );
         }
       }

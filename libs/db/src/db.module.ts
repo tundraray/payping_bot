@@ -4,6 +4,7 @@ import type postgres from 'postgres';
 import dbConfig from './config/db.config';
 import { DatabaseProvider, SQL_CLIENT, SqlClientProvider } from './database.provider';
 import { AnalyticsService } from './services/analytics.service';
+import { AnalyticsSchedulerService } from './services/analytics-scheduler.service';
 import { ClassificationService } from './services/classification.service';
 import { PaymentsService } from './services/payments.service';
 import { RecipientWalletsService } from './services/recipient-wallets.service';
@@ -39,6 +40,7 @@ import { UsersService } from './services/users.service';
     RecipientWalletsService,
     ClassificationService,
     AnalyticsService,
+    AnalyticsSchedulerService,
   ],
   exports: [
     // Export domain services for use by other modules

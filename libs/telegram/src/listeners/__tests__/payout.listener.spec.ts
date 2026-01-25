@@ -179,9 +179,9 @@ describe('PayoutListener', () => {
       );
 
       const message = mockBot.api.sendMessage.mock.calls[0][1] as string;
-      // truncateAddress shows first 6 + last 4 chars
+      // truncateAddress shows first 4 + last 3 chars (unified masking)
       // Fluent adds Unicode isolation marks around variables, so use regex match
-      expect(message).toMatch(/TRX7nK\.\.\.J9kP/);
+      expect(message).toMatch(/TRX7\.\.\.9kP/);
     });
 
     it('should include session total in notification', async () => {

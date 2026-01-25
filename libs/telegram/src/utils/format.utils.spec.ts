@@ -73,11 +73,11 @@ describe('format.utils', () => {
   });
 
   describe('truncateAddress', () => {
-    it('should truncate long addresses', () => {
-      expect(truncateAddress('TRX7nK123456789abcdef9kPm')).toBe('TRX7nK...9kPm');
+    it('should truncate long addresses (first 4 + last 3)', () => {
+      expect(truncateAddress('TRX7nK123456789abcdef9kPm')).toBe('TRX7...kPm');
     });
 
-    it('should not truncate short addresses', () => {
+    it('should not truncate short addresses (<=10 chars)', () => {
       expect(truncateAddress('TRX7nK9kPm')).toBe('TRX7nK9kPm');
     });
   });

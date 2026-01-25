@@ -187,7 +187,7 @@ export class RecipientWalletsService {
         })
         .where(eq(recipientWallets.address, address));
 
-      this.logger.log(`Wallet marked as fired: ${address}`);
+      this.logger.debug(`Marked as fired: ${address.slice(0, 8)}...`);
     } catch (error) {
       this.logger.error('Failed to mark wallet as fired', { address, error });
       throw error;
@@ -217,7 +217,7 @@ export class RecipientWalletsService {
         })
         .where(eq(recipientWallets.address, address));
 
-      this.logger.log(`Wallet rehired: ${address}`);
+      this.logger.debug(`Rehired: ${address.slice(0, 8)}...`);
     } catch (error) {
       this.logger.error('Failed to mark wallet as rehired', { address, error });
       throw error;

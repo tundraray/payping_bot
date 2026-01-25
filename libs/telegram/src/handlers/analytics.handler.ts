@@ -417,10 +417,21 @@ export class AnalyticsHandler implements OnModuleInit {
     lines.push(`${monthName}`);
     lines.push('');
 
+    // Column widths
+    const COL_POS = 3; // " XX"
+    const COL_WALLET = 10; // "TXyz...Wah"
+    const COL_PREV = 4; // "  99" or "   -"
+    const COL_CHG = 4; // "MISS" or " NEW" or "   ↑"
+    const COL_AMOUNT = 14; // "65,283.24 +47%"
+
     // Table header - Amount as last column
     lines.push('<pre>');
-    lines.push(' #  | Wallet  | Prev | Chg | Amount');
-    lines.push('----+---------+------+-----+---------------');
+    lines.push(
+      `${'#'.padStart(COL_POS)} | ${'Wallet'.padEnd(COL_WALLET)} | ${'Prev'.padStart(COL_PREV)} | ${'Chg'.padStart(COL_CHG)} | ${'Amount'.padStart(COL_AMOUNT)}`,
+    );
+    lines.push(
+      `${'-'.repeat(COL_POS + 1)}+${'-'.repeat(COL_WALLET + 2)}+${'-'.repeat(COL_PREV + 2)}+${'-'.repeat(COL_CHG + 2)}+${'-'.repeat(COL_AMOUNT + 1)}`,
+    );
 
     // Table rows
     let totalAmount = BigInt(0);
@@ -450,7 +461,7 @@ export class AnalyticsHandler implements OnModuleInit {
       }
 
       lines.push(
-        ` ${entry.position.toString().padStart(2)} | ${truncatedWallet.padEnd(7)} | ${prevPos.padStart(4)} | ${posIndicator.padStart(3)} | ${amountCell}`,
+        `${entry.position.toString().padStart(COL_POS)} | ${truncatedWallet.padEnd(COL_WALLET)} | ${prevPos.padStart(COL_PREV)} | ${posIndicator.padStart(COL_CHG)} | ${amountCell.padStart(COL_AMOUNT)}`,
       );
 
       // Total = sum of amounts (use current month amount if available, else previous)
@@ -486,17 +497,26 @@ export class AnalyticsHandler implements OnModuleInit {
     lines.push(`${monthName}`);
     lines.push('');
 
+    // Column widths
+    const COL_WALLET = 10; // "TXyz...Wah"
+    const COL_LAST_PAYMENT = 12; // "January 2026"
+    const COL_AMOUNT = 12; // "65,283.24"
+
     // Table
     lines.push('<pre>');
-    lines.push(' Wallet      | Last Payment | Amount');
-    lines.push('-------------+--------------+--------');
+    lines.push(
+      `${'Wallet'.padEnd(COL_WALLET)} | ${'Last Payment'.padStart(COL_LAST_PAYMENT)} | ${'Amount'.padStart(COL_AMOUNT)}`,
+    );
+    lines.push(
+      `${'-'.repeat(COL_WALLET)}+${'-'.repeat(COL_LAST_PAYMENT + 2)}+${'-'.repeat(COL_AMOUNT + 1)}`,
+    );
 
     for (const entry of fired) {
       const truncatedWallet = truncateWalletForAnalytics(entry.walletAddress);
       const amount = formatUsdtDisplay(entry.lastAmount);
 
       lines.push(
-        ` ${truncatedWallet.padEnd(11)} | ${entry.lastPaymentMonth.padStart(12)} | ${amount.padStart(6)}`,
+        `${truncatedWallet.padEnd(COL_WALLET)} | ${entry.lastPaymentMonth.padStart(COL_LAST_PAYMENT)} | ${amount.padStart(COL_AMOUNT)}`,
       );
     }
 

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { and, asc, eq, gte, lt, max, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { monthlyPositions, recipientWallets, salaryHistory, transactions } from '../schema';
+import { maskWalletAddress } from '../utils/mask.utils';
 import {
   ClassificationService,
   type PaymentInfo,
@@ -116,8 +117,8 @@ export class AnalyticsService {
         wallet = created;
       }
 
-      // Step 2: Get recent payments for classification (relative to transaction date)
-      const recentPayments = await this.getRecentPayments(toAddress, 3, tx.timestamp);
+      // Step 2: Get ALL payments for classification (needed for regularity calculation)
+      const allPayments = await this.getPayments(toAddress, tx.timestamp);
 
       // Step 3: Evaluate classification
       const newPayment: PaymentInfo = {
@@ -127,20 +128,20 @@ export class AnalyticsService {
 
       const classificationResult = await this.classificationService.evaluateClassification(
         toAddress,
-        recentPayments,
+        allPayments,
         newPayment,
       );
 
       // Step 4: Update wallet if classification changed
       if (classificationResult.changed) {
-        await this.recipientWalletsService.updateClassification(
-          toAddress,
-          classificationResult.classification,
-        );
-
-        // Handle rehire case
+        // Handle rehire case (markAsRehired also sets classification)
         if (classificationResult.previousClassification === 'FIRED') {
           await this.recipientWalletsService.markAsRehired(toAddress, tx.amount);
+        } else {
+          await this.recipientWalletsService.updateClassification(
+            toAddress,
+            classificationResult.classification,
+          );
         }
       }
 
@@ -177,16 +178,6 @@ export class AnalyticsService {
       );
 
       const processingTimeMs = Date.now() - startTime;
-
-      this.logger.log('Transaction processed for analytics', {
-        txHash: tx.hash,
-        toAddress,
-        classification: classificationResult.classification,
-        classificationChanged: classificationResult.changed,
-        salaryChangeDetected: !!salaryChange,
-        position,
-        processingTimeMs,
-      });
 
       return {
         walletAddress: toAddress,
@@ -274,7 +265,7 @@ export class AnalyticsService {
         prevPositionsCount: prevPositions.length,
         currentPositionsCount: currentPositions.length,
         positions: currentPositions.slice(0, 5).map((p) => ({
-          wallet: p.walletAddress.slice(0, 8),
+          wallet: maskWalletAddress(p.walletAddress),
           classification: p.classification,
           position: p.position,
         })),
@@ -539,39 +530,41 @@ export class AnalyticsService {
   }
 
   /**
-   * Get recent payments for a wallet address.
+   * Get payments for a wallet address.
    *
    * @param address - Wallet address
-   * @param months - Number of months to look back
    * @param referenceTimestamp - Reference timestamp (transaction date) to calculate from
+   * @param months - Optional number of months to look back. If not provided, returns ALL payments.
    * @returns Array of payment info
    */
-  private async getRecentPayments(
+  private async getPayments(
     address: string,
-    months: number,
     referenceTimestamp: number,
+    months?: number,
   ): Promise<PaymentInfo[]> {
     const monitoredWallet = this.configService.get<string>('MONITORED_WALLET_ADDRESS');
 
     if (!monitoredWallet) {
-      this.logger.warn('MONITORED_WALLET_ADDRESS not configured, cannot get recent payments');
+      this.logger.warn('MONITORED_WALLET_ADDRESS not configured, cannot get payments');
       return [];
     }
 
-    // Calculate start date relative to transaction date, not current date
     const referenceDate = new Date(referenceTimestamp);
-    const startDate = new Date(
-      Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth() - months, 1),
-    );
-    const startTimestamp = startDate.getTime();
 
-    this.logger.debug('Fetching recent payments', {
-      recipientAddress: `${address.slice(0, 8)}...`,
-      fromWallet: `${monitoredWallet.slice(0, 8)}...`,
-      months,
-      referenceDate: referenceDate.toISOString(),
-      startDate: startDate.toISOString(),
-    });
+    // Build where conditions
+    const conditions = [
+      eq(transactions.fromAddress, monitoredWallet), // Outgoing from monitored wallet
+      eq(transactions.toAddress, address), // To recipient
+      lt(transactions.timestamp, referenceTimestamp), // Before current transaction
+    ];
+
+    // Add time window filter only if months is specified
+    if (months !== undefined) {
+      const startDate = new Date(
+        Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth() - months, 1),
+      );
+      conditions.push(gte(transactions.timestamp, startDate.getTime()));
+    }
 
     const result = await this.db
       .select({
@@ -579,21 +572,8 @@ export class AnalyticsService {
         timestamp: transactions.timestamp,
       })
       .from(transactions)
-      .where(
-        and(
-          eq(transactions.fromAddress, monitoredWallet), // Outgoing from monitored wallet
-          eq(transactions.toAddress, address), // To recipient
-          gte(transactions.timestamp, startTimestamp), // Within time window
-          lt(transactions.timestamp, referenceTimestamp), // Before current transaction
-        ),
-      )
+      .where(and(...conditions))
       .orderBy(asc(transactions.timestamp));
-
-    this.logger.debug('Found payments', {
-      recipientAddress: `${address.slice(0, 8)}...`,
-      count: result.length,
-      amounts: result.slice(0, 5).map((r) => r.amount),
-    });
 
     return result.map((r) => ({
       amount: r.amount,
@@ -755,9 +735,17 @@ export class AnalyticsService {
     return address || null;
   }
 
+  /** Maximum concurrent wallet processing during backfill */
+  private static readonly BACKFILL_CONCURRENCY = 10;
+
   /**
    * Backfill analytics from existing transactions.
-   * Processes all outgoing transactions from monitored wallet that haven't been processed yet.
+   * Processes all outgoing transactions from monitored wallet.
+   *
+   * Parallelization strategy:
+   * - Group transactions by recipient wallet
+   * - Process wallets in parallel (up to BACKFILL_CONCURRENCY)
+   * - Within each wallet, process transactions sequentially (preserves order)
    *
    * @returns Number of transactions processed
    */
@@ -771,7 +759,6 @@ export class AnalyticsService {
     this.logger.log('Starting analytics backfill', { monitoredWallet });
 
     // Get all outgoing transactions ordered by timestamp
-    // Use case-insensitive comparison because TRON addresses can vary in case
     const outgoingTxs = await this.db
       .select()
       .from(transactions)
@@ -780,8 +767,65 @@ export class AnalyticsService {
 
     this.logger.log(`Found ${outgoingTxs.length} outgoing transactions to process`);
 
-    let processed = 0;
+    // Group transactions by recipient wallet (preserving order within each group)
+    const txsByWallet = new Map<string, typeof outgoingTxs>();
     for (const tx of outgoingTxs) {
+      const key = tx.toAddress.toLowerCase();
+      if (!txsByWallet.has(key)) {
+        txsByWallet.set(key, []);
+      }
+      txsByWallet.get(key)!.push(tx);
+    }
+
+    this.logger.log(`Grouped into ${txsByWallet.size} wallets for parallel processing`);
+
+    // Process wallets in parallel batches
+    const walletGroups = Array.from(txsByWallet.values());
+    let totalProcessed = 0;
+    let walletsCompleted = 0;
+
+    // Process in batches of BACKFILL_CONCURRENCY
+    for (let i = 0; i < walletGroups.length; i += AnalyticsService.BACKFILL_CONCURRENCY) {
+      const batch = walletGroups.slice(i, i + AnalyticsService.BACKFILL_CONCURRENCY);
+
+      const results = await Promise.all(
+        batch.map((walletTxs) => this.processWalletTransactions(walletTxs)),
+      );
+
+      totalProcessed += results.reduce((sum, count) => sum + count, 0);
+      walletsCompleted += batch.length;
+
+      this.logger.log(
+        `Backfill progress: ${walletsCompleted}/${txsByWallet.size} wallets, ${totalProcessed}/${outgoingTxs.length} txs`,
+      );
+    }
+
+    this.logger.log(
+      `Backfill completed: ${totalProcessed}/${outgoingTxs.length} transactions processed`,
+    );
+    return totalProcessed;
+  }
+
+  /**
+   * Process all transactions for a single wallet sequentially.
+   * @returns Number of successfully processed transactions
+   */
+  private async processWalletTransactions(
+    txs: Array<{
+      hash: string;
+      fromAddress: string;
+      toAddress: string;
+      amount: string;
+      timestamp: number;
+      type: string;
+      blockNumber: number;
+      contractAddress: string | null;
+      raw: unknown;
+    }>,
+  ): Promise<number> {
+    let processed = 0;
+
+    for (const tx of txs) {
       try {
         await this.processTransaction({
           hash: tx.hash,
@@ -791,14 +835,10 @@ export class AnalyticsService {
           timestamp: tx.timestamp,
           type: tx.type as TransactionType,
           blockNumber: tx.blockNumber,
-          contractAddress: tx.contractAddress,
+          contractAddress: tx.contractAddress ?? '',
           raw: tx.raw as Record<string, unknown>,
         });
         processed++;
-
-        if (processed % 10 === 0) {
-          this.logger.log(`Backfill progress: ${processed}/${outgoingTxs.length}`);
-        }
       } catch (error) {
         this.logger.error('Failed to process transaction during backfill', {
           hash: tx.hash,
@@ -807,9 +847,6 @@ export class AnalyticsService {
       }
     }
 
-    this.logger.log(
-      `Backfill completed: ${processed}/${outgoingTxs.length} transactions processed`,
-    );
     return processed;
   }
 }

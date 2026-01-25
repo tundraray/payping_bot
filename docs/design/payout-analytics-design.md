@@ -757,39 +757,30 @@ function checkFiredStatus(): void {
 
 ### Logging and Monitoring
 
-#### Structured Logging
+#### Logging Philosophy
+
+Logs are minimal and only emitted when state actually changes. All wallet addresses are masked for privacy.
+
+#### Log Format
 
 ```typescript
-// Transaction processing
-{
-  level: 'info',
-  context: 'AnalyticsService.processTransaction',
-  message: 'Transaction processed for analytics',
-  data: {
-    txHash: 'abc123...',
-    toAddress: 'TXyz...',
-    classification: 'EMPLOYEE',
-    classificationChanged: true,
-    salaryChangeDetected: false,
-    processingTimeMs: 45,
-    timestamp: '2026-01-23T10:30:00.000Z'
-  }
-}
+// Classification changes only (INFO) - ClassificationService
+"New wallet: TXyz...abc -> ONE_TIME"
+"Upgrade: TXyz...abc UNKNOWN -> ONE_TIME"
+"Classification: TXyz...abc ONE_TIME -> EMPLOYEE (regularity 85%)"
+"Rehire: TXyz...abc FIRED -> EMPLOYEE"
+"Salary change: TXyz...abc +10%"
+"Fired: TXyz...abc (2 months inactive)"
 
-// Classification change
-{
-  level: 'info',
-  context: 'ClassificationService.evaluateClassification',
-  message: 'Wallet classification updated',
-  data: {
-    walletAddress: 'TXyz...',
-    previousClassification: 'ONE_TIME',
-    newClassification: 'EMPLOYEE',
-    reason: 'stable_payments_3_months',
-    timestamp: '2026-01-23T10:30:00.000Z'
-  }
-}
+// No log when classification doesn't change
+// No verbose debug logs in production
 ```
+
+**Key Principles:**
+- Only log on state changes (no "processing transaction" logs)
+- Wallet addresses always masked (first 4 + last 3)
+- Concise, grep-friendly single-line format
+- INFO level for business events, DEBUG for internal details
 
 #### Key Metrics (Future)
 
@@ -1100,3 +1091,4 @@ it('should evolve from ONE_TIME to EMPLOYEE with stable payments', async () => {
 | 2026-01-23 | 1.0 | Initial version | Claude |
 | 2026-01-23 | 1.1 | Added fromAddress index requirement, cache completeness detection mechanism, timestamp tie test case, marked new callback actions | Claude |
 | 2026-01-23 | 2.0 | Major revision: (1) Removed admin features (ClassifyHandler, /classify command, ADMIN_USER_IDS), (2) Changed analytics display to separate messages per classification, (3) Changed from on-demand to real-time processing architecture, (4) Added ClassificationService with automatic classification algorithm, (5) Added salary tracking and change detection, (6) Added fired/rehired status tracking, (7) Updated database schema with salary_history table and new fields (last_amount, last_payment_at, hired_at, fired_at), (8) Updated acceptance criteria for automatic classification accuracy, salary change detection, fired/rehired status, and separate message display, (9) Updated implementation phases to reflect new architecture | Claude |
+| 2026-01-26 | 2.1 | Logging optimization: (1) Simplified logging philosophy - only emit on state changes; (2) Removed verbose debug logs; (3) All wallet addresses masked for privacy; (4) Concise grep-friendly log format | Claude |
