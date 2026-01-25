@@ -52,9 +52,15 @@ describe('AnalyticsService', () => {
   });
 
   // Create a mock DB that uses Promise resolution for queries
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type ChainableQuery = Record<
+    string,
+    jest.Mock | ((fn: (v: unknown) => unknown) => Promise<unknown>)
+  >;
+
   const createMockDb = () => {
     // Create a chainable mock that resolves to empty array by default
-    const createChainableQuery = (): Record<string, jest.Mock> => {
+    const createChainableQuery = (): ChainableQuery => {
       const chainMethods = [
         'select',
         'from',
@@ -69,14 +75,11 @@ describe('AnalyticsService', () => {
         'set',
       ];
 
-      const query = Object.fromEntries(chainMethods.map((m) => [m, jest.fn()])) as Record<
-        string,
-        jest.Mock
-      >;
+      const query = Object.fromEntries(chainMethods.map((m) => [m, jest.fn()])) as ChainableQuery;
 
       // Make all methods return the query itself for chaining, but also resolve as a promise
       for (const method of chainMethods) {
-        query[method].mockImplementation(() => {
+        (query[method] as jest.Mock).mockImplementation(() => {
           const result = Object.create(query);
           // biome-ignore lint/suspicious/noThenProperty: Required for mock promise-like behavior
           result.then = (fn: (v: unknown) => unknown) => Promise.resolve([]).then(fn);

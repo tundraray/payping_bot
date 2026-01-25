@@ -2,6 +2,7 @@ import {
   AnalyticsService,
   type GroupedAnalyticsResult as DbGroupedAnalyticsResult,
   type FiredEmployeeResult,
+  type SalaryChangeInfo,
 } from '@app/db';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TelegramService } from '../telegram.service';
@@ -83,6 +84,9 @@ describe('AnalyticsHandler', () => {
           provide: AnalyticsService,
           useValue: {
             getGroupedAnalytics: jest.fn(),
+            getSalaryChangesForMonth: jest
+              .fn()
+              .mockResolvedValue(new Map<string, SalaryChangeInfo>()),
           },
         },
         {
@@ -99,11 +103,24 @@ describe('AnalyticsHandler', () => {
   });
 
   /**
+   * Mutable mock context interface for testing.
+   * Allows reassignment of read-only BotContext properties.
+   */
+  interface MockBotContext {
+    from: BotContext['from'] | undefined;
+    message: BotContext['message'] | undefined;
+    callbackQuery: BotContext['callbackQuery'] | undefined;
+    reply: jest.Mock;
+    t: jest.Mock;
+    answerCallbackQuery: jest.Mock;
+  }
+
+  /**
    * Creates a mock BotContext for testing.
    * @param telegramId - The Telegram user ID
    * @returns Mock BotContext with basic properties
    */
-  function createMockContext(telegramId: number): jest.Mocked<BotContext> {
+  function createMockContext(telegramId: number): MockBotContext {
     return {
       from: {
         id: telegramId,
@@ -115,11 +132,12 @@ describe('AnalyticsHandler', () => {
       },
       message: {
         text: '/analytics',
-      },
+      } as BotContext['message'],
+      callbackQuery: undefined,
       reply: jest.fn(),
       t: jest.fn((key: string) => key),
       answerCallbackQuery: jest.fn(),
-    } as unknown as jest.Mocked<BotContext>;
+    };
   }
 
   describe('handleAnalytics', () => {
@@ -130,7 +148,7 @@ describe('AnalyticsHandler', () => {
       const ctx = createMockContext(123456);
       ctx.from = undefined;
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       expect(ctx.reply).not.toHaveBeenCalled();
     });
@@ -140,7 +158,7 @@ describe('AnalyticsHandler', () => {
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       expect(ctx.t).toHaveBeenCalledWith('analytics-no-data');
       expect(ctx.reply).toHaveBeenCalled();
@@ -154,7 +172,7 @@ describe('AnalyticsHandler', () => {
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockAnalyticsWithData);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // Should send message for employees
       expect(ctx.t).toHaveBeenCalledWith('analytics-employees-header', {
@@ -180,7 +198,7 @@ describe('AnalyticsHandler', () => {
         employees: mockAnalyticsWithData.employees,
       });
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // Only employees message should be sent
       expect(ctx.t).toHaveBeenCalledWith('analytics-employees-header', {
@@ -195,13 +213,17 @@ describe('AnalyticsHandler', () => {
      */
     it('should parse month parameter in YYYY-MM format', async () => {
       const ctx = createMockContext(123456);
-      ctx.message = { text: '/analytics 2026-01' } as typeof ctx.message;
+      ctx.message = { text: '/analytics 2026-01' } as BotContext['message'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
-      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith('2026-01');
+      // First arg is yearMonth, second arg is comparison month
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(
+        '2026-01',
+        expect.any(String),
+      );
     });
 
     /**
@@ -209,15 +231,18 @@ describe('AnalyticsHandler', () => {
      */
     it('should parse month parameter in short format', async () => {
       const ctx = createMockContext(123456);
-      ctx.message = { text: '/analytics Jan' } as typeof ctx.message;
+      ctx.message = { text: '/analytics Jan' } as BotContext['message'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // Should convert Jan to current year's January
       const currentYear = new Date().getUTCFullYear();
-      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(`${currentYear}-01`);
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(
+        `${currentYear}-01`,
+        expect.any(String),
+      );
     });
 
     /**
@@ -229,16 +254,19 @@ describe('AnalyticsHandler', () => {
       const futureDate = new Date();
       futureDate.setUTCMonth(futureDate.getUTCMonth() + 2);
       const futureMonth = `${futureDate.getUTCFullYear()}-${String(futureDate.getUTCMonth() + 1).padStart(2, '0')}`;
-      ctx.message = { text: `/analytics ${futureMonth}` } as typeof ctx.message;
+      ctx.message = { text: `/analytics ${futureMonth}` } as BotContext['message'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // Should use current month instead of future month
       const now = new Date();
       const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(currentMonth);
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(
+        currentMonth,
+        expect.any(String),
+      );
     });
 
     /**
@@ -250,14 +278,17 @@ describe('AnalyticsHandler', () => {
       const pastDate = new Date();
       pastDate.setUTCMonth(pastDate.getUTCMonth() - 8);
       const pastMonth = `${pastDate.getUTCFullYear()}-${String(pastDate.getUTCMonth() + 1).padStart(2, '0')}`;
-      ctx.message = { text: `/analytics ${pastMonth}` } as typeof ctx.message;
+      ctx.message = { text: `/analytics ${pastMonth}` } as BotContext['message'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // Should use the requested historical month (no 6-month limit)
-      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(pastMonth);
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(
+        pastMonth,
+        expect.any(String),
+      );
     });
 
     /**
@@ -268,7 +299,7 @@ describe('AnalyticsHandler', () => {
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockAnalyticsWithData);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // Position indicators should be called for each entry
       expect(ctx.t).toHaveBeenCalledWith('position-up');
@@ -285,7 +316,7 @@ describe('AnalyticsHandler', () => {
         fired: mockFiredEmployees,
       });
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       expect(ctx.t).toHaveBeenCalledWith('analytics-fired-header', {
         count: '1',
@@ -297,7 +328,7 @@ describe('AnalyticsHandler', () => {
 
       analyticsService.getGroupedAnalytics.mockRejectedValue(new Error('DB error'));
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       expect(ctx.reply).toHaveBeenCalledWith('error-generic');
     });
@@ -325,19 +356,27 @@ describe('AnalyticsHandler', () => {
     it('should register analytics:prev callback query handler', () => {
       handler.onModuleInit();
 
-      expect(mockBot.callbackQuery).toHaveBeenCalledWith(
-        CALLBACK_ACTIONS.ANALYTICS_PREV,
-        expect.any(Function),
+      // Handler uses regex patterns to match callback data with month suffix
+      expect(mockBot.callbackQuery).toHaveBeenCalledWith(expect.any(RegExp), expect.any(Function));
+      // Verify the regex matches the expected pattern
+      const regexCall = mockBot.callbackQuery.mock.calls.find(
+        (call) =>
+          call[0] instanceof RegExp && call[0].toString().includes(CALLBACK_ACTIONS.ANALYTICS_PREV),
       );
+      expect(regexCall).toBeDefined();
     });
 
     it('should register analytics:next callback query handler', () => {
       handler.onModuleInit();
 
-      expect(mockBot.callbackQuery).toHaveBeenCalledWith(
-        CALLBACK_ACTIONS.ANALYTICS_NEXT,
-        expect.any(Function),
+      // Handler uses regex patterns to match callback data with month suffix
+      expect(mockBot.callbackQuery).toHaveBeenCalledWith(expect.any(RegExp), expect.any(Function));
+      // Verify the regex matches the expected pattern
+      const regexCall = mockBot.callbackQuery.mock.calls.find(
+        (call) =>
+          call[0] instanceof RegExp && call[0].toString().includes(CALLBACK_ACTIONS.ANALYTICS_NEXT),
       );
+      expect(regexCall).toBeDefined();
     });
   });
 
@@ -346,13 +385,16 @@ describe('AnalyticsHandler', () => {
       const ctx = createMockContext(123456);
       ctx.callbackQuery = {
         data: 'analytics:prev:2026-01',
-      } as typeof ctx.callbackQuery;
+      } as BotContext['callbackQuery'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleNavigationPrev(ctx);
+      await handler.handleNavigationPrev(ctx as unknown as BotContext);
 
-      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith('2025-12');
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(
+        '2025-12',
+        expect.any(String),
+      );
       expect(ctx.answerCallbackQuery).toHaveBeenCalled();
     });
 
@@ -367,11 +409,11 @@ describe('AnalyticsHandler', () => {
       const month = `${sixMonthsAgo.getUTCFullYear()}-${String(sixMonthsAgo.getUTCMonth() + 1).padStart(2, '0')}`;
       ctx.callbackQuery = {
         data: `analytics:prev:${month}`,
-      } as typeof ctx.callbackQuery;
+      } as BotContext['callbackQuery'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleNavigationPrev(ctx);
+      await handler.handleNavigationPrev(ctx as unknown as BotContext);
 
       // Should still answer callback query but not navigate
       expect(ctx.answerCallbackQuery).toHaveBeenCalled();
@@ -383,13 +425,16 @@ describe('AnalyticsHandler', () => {
       const ctx = createMockContext(123456);
       ctx.callbackQuery = {
         data: 'analytics:next:2025-12',
-      } as typeof ctx.callbackQuery;
+      } as BotContext['callbackQuery'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleNavigationNext(ctx);
+      await handler.handleNavigationNext(ctx as unknown as BotContext);
 
-      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith('2026-01');
+      expect(analyticsService.getGroupedAnalytics).toHaveBeenCalledWith(
+        '2026-01',
+        expect.any(String),
+      );
       expect(ctx.answerCallbackQuery).toHaveBeenCalled();
     });
 
@@ -402,11 +447,11 @@ describe('AnalyticsHandler', () => {
       const currentMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
       ctx.callbackQuery = {
         data: `analytics:next:${currentMonth}`,
-      } as typeof ctx.callbackQuery;
+      } as BotContext['callbackQuery'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockEmptyAnalytics);
 
-      await handler.handleNavigationNext(ctx);
+      await handler.handleNavigationNext(ctx as unknown as BotContext);
 
       // Should still answer callback query but not navigate to future
       expect(ctx.answerCallbackQuery).toHaveBeenCalled();
@@ -416,11 +461,11 @@ describe('AnalyticsHandler', () => {
   describe('month name formatting', () => {
     it('should format month name using localization', async () => {
       const ctx = createMockContext(123456);
-      ctx.message = { text: '/analytics 2026-01' } as typeof ctx.message;
+      ctx.message = { text: '/analytics 2026-01' } as BotContext['message'];
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockAnalyticsWithData);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // Month name should be requested from i18n
       expect(ctx.t).toHaveBeenCalledWith('month-january');
@@ -436,14 +481,163 @@ describe('AnalyticsHandler', () => {
 
       analyticsService.getGroupedAnalytics.mockResolvedValue(mockAnalyticsWithData);
 
-      await handler.handleAnalytics(ctx);
+      await handler.handleAnalytics(ctx as unknown as BotContext);
 
       // The reply message should contain truncated addresses
       expect(ctx.reply).toHaveBeenCalled();
-      const replyCall = (ctx.reply as jest.Mock).mock.calls[0];
+      const replyCall = ctx.reply.mock.calls[0];
       const message = replyCall[0] as string;
       // Should contain truncated address format (TXyz...234)
       expect(message).toMatch(/T[A-Za-z0-9]{3}\.\.\.[A-Za-z0-9]{3}/);
+    });
+  });
+
+  describe('amount column display', () => {
+    it('should display current month amount when payout occurred', async () => {
+      const ctx = createMockContext(123456);
+
+      analyticsService.getGroupedAnalytics.mockResolvedValue(mockAnalyticsWithData);
+
+      await handler.handleAnalytics(ctx as unknown as BotContext);
+
+      // The reply message should contain the amount
+      expect(ctx.reply).toHaveBeenCalled();
+      const replyCall = ctx.reply.mock.calls[0];
+      const message = replyCall[0] as string;
+      // Should contain formatted amount (5,000.00 from 5000000000 raw)
+      expect(message).toContain('5,000.00');
+    });
+
+    it('should display comparison month amount when no payout (miss)', async () => {
+      const ctx = createMockContext(123456);
+
+      const mockWithMissedEntry: DbGroupedAnalyticsResult = {
+        employees: [
+          {
+            position: 1,
+            walletAddress: 'TXyzTestWalletAddress12345678901234',
+            classification: 'EMPLOYEE',
+            amount: '0', // No payout this month
+            previousPosition: 1,
+            previousAmount: '3000000000', // But had payout in comparison month
+            positionChange: 'miss',
+          },
+        ],
+        freelancers: [],
+        oneTime: [],
+        unknown: [],
+        fired: [],
+      };
+
+      analyticsService.getGroupedAnalytics.mockResolvedValue(mockWithMissedEntry);
+
+      await handler.handleAnalytics(ctx as unknown as BotContext);
+
+      // The reply message should contain the previous amount (3,000.00 USDT)
+      expect(ctx.reply).toHaveBeenCalled();
+      const replyCall = ctx.reply.mock.calls[0];
+      const message = replyCall[0] as string;
+      expect(message).toContain('3,000.00');
+    });
+
+    it('should display salary change indicator for employees', async () => {
+      const ctx = createMockContext(123456);
+
+      const salaryChangesMap = new Map<string, SalaryChangeInfo>([
+        [
+          'TXyzTestWalletAddress12345678901234',
+          {
+            walletAddress: 'TXyzTestWalletAddress12345678901234',
+            changePercent: 10.5,
+            isIncrease: true,
+          },
+        ],
+      ]);
+
+      analyticsService.getGroupedAnalytics.mockResolvedValue(mockAnalyticsWithData);
+      analyticsService.getSalaryChangesForMonth = jest.fn().mockResolvedValue(salaryChangesMap);
+
+      await handler.handleAnalytics(ctx as unknown as BotContext);
+
+      // The reply message should contain salary change indicator
+      expect(ctx.reply).toHaveBeenCalled();
+      const replyCall = ctx.reply.mock.calls[0];
+      const message = replyCall[0] as string;
+      // Should contain +11% (rounded from 10.5%)
+      expect(message).toMatch(/\+\d+%/);
+    });
+
+    it('should display salary decrease indicator', async () => {
+      const ctx = createMockContext(123456);
+
+      const salaryChangesMap = new Map<string, SalaryChangeInfo>([
+        [
+          'TAbcTestWalletAddress12345678901234',
+          {
+            walletAddress: 'TAbcTestWalletAddress12345678901234',
+            changePercent: 15.0,
+            isIncrease: false,
+          },
+        ],
+      ]);
+
+      analyticsService.getGroupedAnalytics.mockResolvedValue(mockAnalyticsWithData);
+      analyticsService.getSalaryChangesForMonth = jest.fn().mockResolvedValue(salaryChangesMap);
+
+      await handler.handleAnalytics(ctx as unknown as BotContext);
+
+      // The reply message should contain salary decrease indicator
+      expect(ctx.reply).toHaveBeenCalled();
+      const replyCall = ctx.reply.mock.calls[0];
+      const message = replyCall[0] as string;
+      // Should contain -15%
+      expect(message).toMatch(/-\d+%/);
+    });
+
+    it('should not display salary change for missed entries', async () => {
+      const ctx = createMockContext(123456);
+
+      const mockWithMissedEntry: DbGroupedAnalyticsResult = {
+        employees: [
+          {
+            position: 1,
+            walletAddress: 'TXyzTestWalletAddress12345678901234',
+            classification: 'EMPLOYEE',
+            amount: '0',
+            previousPosition: 1,
+            previousAmount: '3000000000',
+            positionChange: 'miss',
+          },
+        ],
+        freelancers: [],
+        oneTime: [],
+        unknown: [],
+        fired: [],
+      };
+
+      // Even if salary change exists, it shouldn't be shown for missed entries
+      const salaryChangesMap = new Map<string, SalaryChangeInfo>([
+        [
+          'TXyzTestWalletAddress12345678901234',
+          {
+            walletAddress: 'TXyzTestWalletAddress12345678901234',
+            changePercent: 10.0,
+            isIncrease: true,
+          },
+        ],
+      ]);
+
+      analyticsService.getGroupedAnalytics.mockResolvedValue(mockWithMissedEntry);
+      analyticsService.getSalaryChangesForMonth = jest.fn().mockResolvedValue(salaryChangesMap);
+
+      await handler.handleAnalytics(ctx as unknown as BotContext);
+
+      // The reply message should NOT contain salary change indicator for missed entry
+      expect(ctx.reply).toHaveBeenCalled();
+      const replyCall = ctx.reply.mock.calls[0];
+      const message = replyCall[0] as string;
+      // Should not contain +10% since entry is missed
+      expect(message).not.toMatch(/\+10%/);
     });
   });
 });

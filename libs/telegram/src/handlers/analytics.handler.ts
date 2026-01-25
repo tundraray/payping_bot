@@ -3,6 +3,7 @@ import {
   type AnalyticsResult as DbAnalyticsResult,
   type GroupedAnalyticsResult as DbGroupedAnalyticsResult,
   type FiredEmployeeResult,
+  type SalaryChangeInfo,
 } from '@app/db';
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { InlineKeyboard } from 'grammy';
@@ -86,9 +87,13 @@ export class AnalyticsHandler implements OnModuleInit {
     bot.command('analytics', (ctx) => this.handleAnalytics(ctx));
     bot.command('rating', (ctx) => this.handleAnalytics(ctx));
 
-    // Register navigation callbacks
-    bot.callbackQuery(CALLBACK_ACTIONS.ANALYTICS_PREV, (ctx) => this.handleNavigationPrev(ctx));
-    bot.callbackQuery(CALLBACK_ACTIONS.ANALYTICS_NEXT, (ctx) => this.handleNavigationNext(ctx));
+    // Register navigation callbacks using regex to match 'analytics:prev:YYYY-MM' format
+    bot.callbackQuery(new RegExp(`^${CALLBACK_ACTIONS.ANALYTICS_PREV}:`), (ctx) =>
+      this.handleNavigationPrev(ctx),
+    );
+    bot.callbackQuery(new RegExp(`^${CALLBACK_ACTIONS.ANALYTICS_NEXT}:`), (ctx) =>
+      this.handleNavigationNext(ctx),
+    );
 
     this.logger.log('AnalyticsHandler commands registered');
   }
@@ -108,8 +113,11 @@ export class AnalyticsHandler implements OnModuleInit {
       // Parse month parameter from command
       const yearMonth = this.parseMonthParameter(ctx);
 
-      // Fetch analytics data
-      const analytics = await this.analyticsService.getGroupedAnalytics(yearMonth);
+      // Fetch analytics data - compare selected month against current month
+      const currentMonth = this.getCurrentMonth();
+      const comparisonMonth =
+        yearMonth === currentMonth ? this.getPreviousMonth(yearMonth) : currentMonth;
+      const analytics = await this.analyticsService.getGroupedAnalytics(yearMonth, comparisonMonth);
 
       // Check if any data exists
       const hasData = this.hasAnalyticsData(analytics);
@@ -119,11 +127,13 @@ export class AnalyticsHandler implements OnModuleInit {
         return;
       }
 
-      // Calculate previous month for comparison display
-      const previousMonth = this.getPreviousMonth(yearMonth);
-
       // Send separate messages for each non-empty classification group
-      const messageCount = await this.sendGroupedMessages(ctx, analytics, yearMonth, previousMonth);
+      const messageCount = await this.sendGroupedMessages(
+        ctx,
+        analytics,
+        yearMonth,
+        comparisonMonth,
+      );
 
       this.logger.log(`Analytics displayed for ${yearMonth}`, {
         telegramId,
@@ -184,9 +194,13 @@ export class AnalyticsHandler implements OnModuleInit {
 
   /**
    * Handle analytics for a specific month (used by navigation).
+   * Compares selected month against current month (or N-1 if viewing current month).
    */
   private async handleAnalyticsForMonth(ctx: BotContext, yearMonth: string): Promise<void> {
-    const analytics = await this.analyticsService.getGroupedAnalytics(yearMonth);
+    const currentMonth = this.getCurrentMonth();
+    const comparisonMonth =
+      yearMonth === currentMonth ? this.getPreviousMonth(yearMonth) : currentMonth;
+    const analytics = await this.analyticsService.getGroupedAnalytics(yearMonth, comparisonMonth);
 
     const hasData = this.hasAnalyticsData(analytics);
     if (!hasData) {
@@ -194,8 +208,7 @@ export class AnalyticsHandler implements OnModuleInit {
       return;
     }
 
-    const previousMonth = this.getPreviousMonth(yearMonth);
-    await this.sendGroupedMessages(ctx, analytics, yearMonth, previousMonth);
+    await this.sendGroupedMessages(ctx, analytics, yearMonth, comparisonMonth);
   }
 
   /**
@@ -323,17 +336,19 @@ export class AnalyticsHandler implements OnModuleInit {
     let messageCount = 0;
 
     const monthName = this.getMonthName(ctx, yearMonth);
-    const prevMonthName = this.getMonthName(ctx, previousMonth);
+    const comparisonMonthName = this.getMonthName(ctx, previousMonth);
 
-    // Send employees message
+    // Fetch salary changes for the current month (only for employees)
+    const salaryChanges = await this.analyticsService.getSalaryChangesForMonth(yearMonth);
+
+    // Send employees message with salary changes
     if (analytics.employees.length > 0) {
       await this.sendGroupMessage(
         ctx,
         'analytics-employees-header',
         analytics.employees,
         monthName,
-        prevMonthName,
-        false,
+        salaryChanges,
       );
       messageCount++;
     }
@@ -345,35 +360,19 @@ export class AnalyticsHandler implements OnModuleInit {
         'analytics-freelancers-header',
         analytics.freelancers,
         monthName,
-        prevMonthName,
-        false,
       );
       messageCount++;
     }
 
     // Send one-time message
     if (analytics.oneTime.length > 0) {
-      await this.sendGroupMessage(
-        ctx,
-        'analytics-onetime-header',
-        analytics.oneTime,
-        monthName,
-        prevMonthName,
-        false,
-      );
+      await this.sendGroupMessage(ctx, 'analytics-onetime-header', analytics.oneTime, monthName);
       messageCount++;
     }
 
     // Send unknown message
     if (analytics.unknown.length > 0) {
-      await this.sendGroupMessage(
-        ctx,
-        'analytics-unknown-header',
-        analytics.unknown,
-        monthName,
-        prevMonthName,
-        false,
-      );
+      await this.sendGroupMessage(ctx, 'analytics-unknown-header', analytics.unknown, monthName);
       messageCount++;
     }
 
@@ -385,7 +384,7 @@ export class AnalyticsHandler implements OnModuleInit {
 
     // Send navigation keyboard on last message
     const keyboard = this.buildNavigationKeyboard(ctx, yearMonth);
-    await ctx.reply(ctx.t('analytics-changes-from', { previousMonth: prevMonthName }), {
+    await ctx.reply(ctx.t('analytics-changes-from', { previousMonth: comparisonMonthName }), {
       parse_mode: 'HTML',
       reply_markup: keyboard,
     });
@@ -396,6 +395,11 @@ export class AnalyticsHandler implements OnModuleInit {
   /**
    * Send a message for a classification group.
    *
+   * Displays:
+   * - Position, Wallet, Amount (with salary change for employees), Prev position, Change indicator
+   * - Amount shows current month if payout occurred, otherwise comparison month amount
+   * - Salary change indicator shown next to amount for employees (e.g., 5000 +10%)
+   *
    * @see AC-2.2: Wallet truncation first 4 + last 3
    * @see AC-2.6: Position within classification group
    */
@@ -404,8 +408,7 @@ export class AnalyticsHandler implements OnModuleInit {
     headerKey: string,
     entries: DbAnalyticsResult[],
     monthName: string,
-    prevMonthName: string,
-    isLast: boolean,
+    salaryChanges?: Map<string, SalaryChangeInfo>,
   ): Promise<void> {
     const lines: string[] = [];
 
@@ -414,26 +417,46 @@ export class AnalyticsHandler implements OnModuleInit {
     lines.push(`${monthName}`);
     lines.push('');
 
-    // Table header
+    // Table header - Amount as last column
     lines.push('<pre>');
-    lines.push(' #  | Wallet      | Prev | Change');
-    lines.push('----+-------------+------+--------');
+    lines.push(' #  | Wallet  | Prev | Chg | Amount');
+    lines.push('----+---------+------+-----+---------------');
 
     // Table rows
     let totalAmount = BigInt(0);
     for (const entry of entries) {
       const posIndicator = this.getPositionIndicator(ctx, entry.positionChange);
-      const prevPos = entry.previousPosition !== null ? entry.previousPosition.toString() : 'NEW';
+      const prevPos = entry.previousPosition !== null ? entry.previousPosition.toString() : '-';
       const truncatedWallet = truncateWalletForAnalytics(entry.walletAddress);
 
+      // Determine which amount to display:
+      // - If payout this month (positionChange !== 'miss'): show current month amount
+      // - If no payout (positionChange === 'miss'): show comparison month amount
+      const displayAmount =
+        entry.positionChange !== 'miss' ? entry.amount : (entry.previousAmount ?? '0');
+
+      // Format the amount for display
+      const amountFormatted = formatUsdtDisplay(displayAmount);
+
+      // Build amount cell with salary change indicator for employees
+      let amountCell = amountFormatted;
+      if (salaryChanges && entry.positionChange !== 'miss') {
+        const salaryChange = salaryChanges.get(entry.walletAddress);
+        if (salaryChange) {
+          const sign = salaryChange.isIncrease ? '+' : '-';
+          const percentStr = `${sign}${Math.abs(salaryChange.changePercent).toFixed(0)}%`;
+          amountCell = `${amountFormatted} ${percentStr}`;
+        }
+      }
+
       lines.push(
-        ` ${entry.position.toString().padStart(2)} | ${truncatedWallet.padEnd(11)} | ${prevPos.padStart(4)} | ${posIndicator.padStart(6)}`,
+        ` ${entry.position.toString().padStart(2)} | ${truncatedWallet.padEnd(7)} | ${prevPos.padStart(4)} | ${posIndicator.padStart(3)} | ${amountCell}`,
       );
 
-      // Total = sum of previous month amounts (N-1)
-      if (entry.previousAmount !== null) {
-        totalAmount += BigInt(entry.previousAmount);
-      }
+      // Total = sum of amounts (use current month amount if available, else previous)
+      const amountForTotal =
+        entry.positionChange !== 'miss' ? entry.amount : (entry.previousAmount ?? '0');
+      totalAmount += BigInt(amountForTotal);
     }
 
     lines.push('</pre>');

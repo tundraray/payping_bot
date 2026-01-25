@@ -13,6 +13,7 @@ export {
   type FiredEmployeeResult,
   type GroupedAnalyticsResult,
   type ProcessingResult,
+  type SalaryChangeInfo,
 } from './services/analytics.service';
 export {
   type ClassificationResult,
