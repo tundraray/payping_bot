@@ -3,6 +3,12 @@ import { DRIZZLE, type DrizzleDB } from '../database.provider';
 import { salaryHistory } from '../schema';
 import { type Classification, RecipientWalletsService } from './recipient-wallets.service';
 
+export interface RegularityResult {
+  uniqueMonths: number; // Count of distinct months with payments
+  spanMonths: number; // Total span from first to last payment in months
+  regularity: number; // Regularity percentage (0.0 to 1.0)
+}
+
 export interface SalaryChangeResult {
   walletAddress: string;
   previousAmount: string;
@@ -27,6 +33,7 @@ export interface ClassificationResult {
   changed: boolean;
   previousClassification?: Classification;
   salaryChange?: SalaryChangeResult;
+  regularity?: number; // Include regularity for logging
 }
 
 /**
@@ -34,16 +41,22 @@ export interface ClassificationResult {
  *
  * This service evaluates payment patterns to automatically classify recipients:
  * - UNKNOWN: Payment < 500 USDT
- * - ONE_TIME: First payment >= 500 USDT
- * - EMPLOYEE: Regular payments with stable amounts (<=20% variance)
- * - FREELANCER: Multiple payments with high variance (>20%)
+ * - ONE_TIME: First payment >= 500 USDT, or < 3 payments, or span < 3 months
+ * - EMPLOYEE: 3+ payments, span >= 3 months, max >= 500 USDT, regularity >= 70%
+ * - FREELANCER: 3+ payments, span >= 3 months, max >= 500 USDT, regularity < 70%
  * - FIRED: Employee without payment for 2+ months
+ *
+ * Regularity is calculated as: unique_months / span_months
+ * where span_months = months from first_seen_at to last_payment_at (inclusive)
  *
  * Also handles salary change detection and fired/rehired status tracking.
  *
- * @see AC-4.1 through AC-4.6: Classification rules
+ * @see AC-1.1, AC-2.1-2.3: UNKNOWN and ONE_TIME rules
+ * @see AC-3.1-3.4: EMPLOYEE classification
+ * @see AC-4.1: FREELANCER classification
+ * @see AC-5.1: FIRED classification
  * @see AC-6.1, AC-6.2: Salary tracking
- * @see AC-7.1 through AC-7.3: Fired/rehired status
+ * @see AC-7.1: Fired/rehired status
  */
 @Injectable()
 export class ClassificationService {
@@ -52,8 +65,14 @@ export class ClassificationService {
   /** Minimum payment threshold for meaningful classification (500 USDT in raw format) */
   private static readonly MIN_SIGNIFICANT_AMOUNT = 500_000_000; // 500 USDT * 10^6
 
-  /** Variance threshold for EMPLOYEE classification (20%) */
-  private static readonly EMPLOYEE_VARIANCE_THRESHOLD = 0.2;
+  /** Minimum regularity for EMPLOYEE classification (70%) */
+  private static readonly EMPLOYEE_REGULARITY_THRESHOLD = 0.7;
+
+  /** Minimum span in months for EMPLOYEE/FREELANCER classification */
+  private static readonly MIN_SPAN_MONTHS = 3;
+
+  /** Minimum payment count for pattern analysis */
+  private static readonly MIN_PAYMENTS_FOR_PATTERN = 3;
 
   /** Salary change detection threshold (5%) */
   private static readonly SALARY_CHANGE_THRESHOLD = 0.05;
@@ -74,11 +93,11 @@ export class ClassificationService {
    * @param newPayment - Current payment being processed
    * @returns Classification result with change information
    *
-   * @see AC-4.1: First payment < 500 -> UNKNOWN
-   * @see AC-4.2: First payment >= 500 -> ONE_TIME
-   * @see AC-4.3: Regular + stable (<=20% variance) -> EMPLOYEE
-   * @see AC-4.4: Multiple + high variance (>20%) -> FREELANCER
-   * @see AC-4.6: FIRED + new payment -> EMPLOYEE (rehire)
+   * @see AC-1.1: First payment < 500 -> UNKNOWN
+   * @see AC-2.1: First payment >= 500 -> ONE_TIME
+   * @see AC-3.1: 3+ payments, span >= 3 months, regularity >= 70% -> EMPLOYEE
+   * @see AC-4.1: 3+ payments, span >= 3 months, regularity < 70% -> FREELANCER
+   * @see AC-7.1: FIRED + new payment -> EMPLOYEE (rehire)
    */
   async evaluateClassification(
     walletAddress: string,
@@ -116,7 +135,7 @@ export class ClassificationService {
 
     const previousClassification = wallet.classification;
 
-    // Handle rehire case (AC-4.6)
+    // Handle rehire case (AC-7.1: FIRED -> EMPLOYEE on new payment)
     if (wallet.classification === 'FIRED') {
       this.logger.log(`Rehire detected: ${walletAddress}`);
 
@@ -127,9 +146,14 @@ export class ClassificationService {
       };
     }
 
-    // Need at least 2 payments for full pattern analysis
-    if (payments.length < 2) {
-      // But check if UNKNOWN should upgrade to ONE_TIME based on current payment
+    // Include new payment in analysis
+    const allPayments = [...payments, newPayment];
+    const totalPayments = allPayments.length;
+    const maxAmount = Math.max(...allPayments.map((p) => Number.parseFloat(p.amount)));
+
+    // Check if we have enough data for pattern analysis (need 3+ payments)
+    if (totalPayments < ClassificationService.MIN_PAYMENTS_FOR_PATTERN) {
+      // Check if UNKNOWN should upgrade to ONE_TIME based on amount threshold
       if (
         wallet.classification === 'UNKNOWN' &&
         amount >= ClassificationService.MIN_SIGNIFICANT_AMOUNT
@@ -145,7 +169,7 @@ export class ClassificationService {
       }
 
       this.logger.debug(
-        `Keeping classification: ${walletAddress.slice(0, 8)}... -> ${wallet.classification} (only ${payments.length} payment(s), need 2+ for pattern analysis)`,
+        `Keeping classification: ${walletAddress.slice(0, 8)}... -> ${wallet.classification} (only ${totalPayments} payment(s), need ${ClassificationService.MIN_PAYMENTS_FOR_PATTERN}+ for pattern analysis)`,
       );
       return {
         classification: wallet.classification,
@@ -153,71 +177,71 @@ export class ClassificationService {
       };
     }
 
-    // Calculate amount variance over recent payments
-    const amounts = payments.map((p) => Number.parseFloat(p.amount));
-    const avgAmount = amounts.reduce((sum, amt) => sum + amt, 0) / amounts.length;
+    // Max amount must be >= 500 USDT for EMPLOYEE/FREELANCER
+    if (maxAmount < ClassificationService.MIN_SIGNIFICANT_AMOUNT) {
+      this.logger.debug(
+        `Keeping classification: ${walletAddress.slice(0, 8)}... -> ${wallet.classification} (max amount ${maxAmount} < threshold ${ClassificationService.MIN_SIGNIFICANT_AMOUNT})`,
+      );
+      return {
+        classification: wallet.classification,
+        changed: false,
+      };
+    }
 
-    // Calculate coefficient of variation (std dev / mean)
-    const variance = amounts.reduce((sum, amt) => sum + (amt - avgAmount) ** 2, 0) / amounts.length;
-    const stdDev = Math.sqrt(variance);
-    const coefficientOfVariation = avgAmount > 0 ? stdDev / avgAmount : 0;
-
-    // Check if payments span multiple months
-    const uniqueMonths = new Set(
-      payments.map(
-        (p) =>
-          `${p.timestamp.getFullYear()}-${String(p.timestamp.getMonth() + 1).padStart(2, '0')}`,
-      ),
+    // Calculate regularity using the new algorithm
+    const newPaymentTimestamp =
+      newPayment.timestamp instanceof Date ? newPayment.timestamp.getTime() : newPayment.timestamp;
+    const { uniqueMonths, spanMonths, regularity } = this.calculateRegularity(
+      allPayments,
+      wallet.firstSeenAt,
+      newPaymentTimestamp,
     );
 
     this.logger.debug('Pattern analysis', {
       walletAddress: `${walletAddress.slice(0, 8)}...`,
-      paymentsCount: payments.length,
-      amounts: amounts.slice(0, 5), // First 5 for logging
-      avgAmount,
-      coefficientOfVariation: coefficientOfVariation.toFixed(3),
-      varianceThreshold: ClassificationService.EMPLOYEE_VARIANCE_THRESHOLD,
-      uniqueMonths: Array.from(uniqueMonths),
+      paymentsCount: totalPayments,
+      uniqueMonths,
+      spanMonths,
+      regularity,
+      regularityThreshold: ClassificationService.EMPLOYEE_REGULARITY_THRESHOLD,
       currentClassification: wallet.classification,
     });
 
-    // Classification logic (AC-4.3, AC-4.4)
-    let newClassification: Classification = wallet.classification;
-
-    if (uniqueMonths.size >= 2) {
-      if (coefficientOfVariation <= ClassificationService.EMPLOYEE_VARIANCE_THRESHOLD) {
-        // Regular payments across months with stable amounts (<=20% variance) -> EMPLOYEE
-        newClassification = 'EMPLOYEE';
+    // Span must be >= 3 months for EMPLOYEE/FREELANCER
+    if (spanMonths < ClassificationService.MIN_SPAN_MONTHS) {
+      // Check if UNKNOWN should upgrade to ONE_TIME
+      if (
+        wallet.classification === 'UNKNOWN' &&
+        maxAmount >= ClassificationService.MIN_SIGNIFICANT_AMOUNT
+      ) {
         this.logger.debug(
-          `Classification decision: ${walletAddress.slice(0, 8)}... -> EMPLOYEE (${uniqueMonths.size} months, variance ${(coefficientOfVariation * 100).toFixed(1)}% <= ${ClassificationService.EMPLOYEE_VARIANCE_THRESHOLD * 100}%)`,
+          `Classification decision: ${walletAddress.slice(0, 8)}... -> ONE_TIME (span ${spanMonths} < ${ClassificationService.MIN_SPAN_MONTHS} months, upgrading from UNKNOWN)`,
         );
-      } else {
-        // Multiple months with high variance -> FREELANCER
-        newClassification = 'FREELANCER';
-        this.logger.debug(
-          `Classification decision: ${walletAddress.slice(0, 8)}... -> FREELANCER (${uniqueMonths.size} months, variance ${(coefficientOfVariation * 100).toFixed(1)}% > ${ClassificationService.EMPLOYEE_VARIANCE_THRESHOLD * 100}%)`,
-        );
+        return {
+          classification: 'ONE_TIME',
+          changed: true,
+          previousClassification: 'UNKNOWN',
+        };
       }
-    } else if (uniqueMonths.size === 1 && payments.length >= 2) {
-      // Multiple payments same month, keep current classification or ONE_TIME
-      if (wallet.classification === 'UNKNOWN') {
-        const latestAmount = Number.parseFloat(newPayment.amount);
-        if (latestAmount >= ClassificationService.MIN_SIGNIFICANT_AMOUNT) {
-          newClassification = 'ONE_TIME';
-          this.logger.debug(
-            `Classification decision: ${walletAddress.slice(0, 8)}... -> ONE_TIME (multiple payments same month, amount >= threshold)`,
-          );
-        }
-      } else {
-        this.logger.debug(
-          `Classification decision: ${walletAddress.slice(0, 8)}... -> keeping ${wallet.classification} (only 1 unique month)`,
-        );
-      }
-    } else {
       this.logger.debug(
-        `Classification decision: ${walletAddress.slice(0, 8)}... -> keeping ${wallet.classification} (no pattern match)`,
+        `Keeping classification: ${walletAddress.slice(0, 8)}... -> ${wallet.classification} (span ${spanMonths} < ${ClassificationService.MIN_SPAN_MONTHS} months)`,
       );
+      return {
+        classification: wallet.classification,
+        changed: false,
+      };
     }
+
+    // Determine classification based on regularity (AC-3.1, AC-4.1)
+    const newClassification: Classification =
+      regularity >= ClassificationService.EMPLOYEE_REGULARITY_THRESHOLD ? 'EMPLOYEE' : 'FREELANCER';
+
+    // Log classification decision
+    this.logger.debug('Classification decision', {
+      walletAddress: `${walletAddress.slice(0, 8)}...`,
+      decision: newClassification,
+      reason: `${spanMonths} months span, ${uniqueMonths} unique months, regularity ${(regularity * 100).toFixed(0)}% ${regularity >= ClassificationService.EMPLOYEE_REGULARITY_THRESHOLD ? '>=' : '<'} 70%`,
+    });
 
     const changed = newClassification !== previousClassification;
 
@@ -231,6 +255,7 @@ export class ClassificationService {
       classification: newClassification,
       changed,
       previousClassification: changed ? previousClassification : undefined,
+      regularity,
     };
   }
 
@@ -355,24 +380,45 @@ export class ClassificationService {
   }
 
   /**
-   * Calculate variance (coefficient of variation) for a set of amounts.
-   * Exposed for testing purposes.
+   * Calculate payment regularity based on unique months with payments.
    *
-   * @param amounts - Array of amounts (as strings)
-   * @returns Coefficient of variation (0-1 scale)
+   * Regularity = unique_months / span_months
+   * - 100% regularity: payments every month
+   * - 70% regularity: payments in 7 out of 10 months
+   * - Lower regularity: larger gaps between payments
+   *
+   * @param payments - All payments to analyze (including new payment)
+   * @param firstSeenAt - First payment timestamp for this wallet
+   * @param referenceTimestamp - Latest payment timestamp (usually new payment)
+   * @returns RegularityResult with unique months, span, and regularity ratio
    */
-  calculateVariance(amounts: string[]): number {
-    if (amounts.length < 2) return 0;
+  calculateRegularity(
+    payments: Array<{ timestamp: Date | number }>,
+    firstSeenAt: Date,
+    referenceTimestamp: number,
+  ): RegularityResult {
+    // Extract unique months from all payments using UTC
+    const uniqueMonthsSet = new Set(
+      payments.map((p) => {
+        const date = p.timestamp instanceof Date ? p.timestamp : new Date(p.timestamp);
+        const year = date.getUTCFullYear();
+        const month = date.getUTCMonth() + 1; // 0-indexed, convert to 1-12
+        return `${year}-${String(month).padStart(2, '0')}`;
+      }),
+    );
 
-    const numericAmounts = amounts.map((a) => Number.parseFloat(a));
-    const avgAmount = numericAmounts.reduce((sum, amt) => sum + amt, 0) / numericAmounts.length;
+    // Calculate span from first_seen_at to reference timestamp (inclusive)
+    const firstDate = new Date(firstSeenAt);
+    const lastDate = new Date(referenceTimestamp);
 
-    if (avgAmount === 0) return 0;
+    const spanMonths =
+      (lastDate.getUTCFullYear() - firstDate.getUTCFullYear()) * 12 +
+      (lastDate.getUTCMonth() - firstDate.getUTCMonth()) +
+      1; // +1 for inclusive span
 
-    const variance =
-      numericAmounts.reduce((sum, amt) => sum + (amt - avgAmount) ** 2, 0) / numericAmounts.length;
-    const stdDev = Math.sqrt(variance);
+    const uniqueMonths = uniqueMonthsSet.size;
+    const regularity = spanMonths > 0 ? uniqueMonths / spanMonths : 0;
 
-    return stdDev / avgAmount;
+    return { uniqueMonths, spanMonths, regularity };
   }
 }
