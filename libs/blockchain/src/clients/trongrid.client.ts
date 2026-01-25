@@ -259,4 +259,194 @@ export class TronGridClient {
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+
+  /**
+   * Get USDT balance for a wallet address.
+   *
+   * Uses TronGrid triggerconstantcontract API to call USDT contract's balanceOf function.
+   *
+   * @param address - TRON wallet address (34 chars, starts with T)
+   * @returns USDT balance in raw units (6 decimals, as string)
+   * @throws {TronGridApiError} If API call fails or returns invalid response
+   *
+   * @example
+   * const balance = await client.getUSDTBalance('TXyz...');
+   * // Returns "5000000000" (5000.00 USDT)
+   */
+  async getUSDTBalance(address: string): Promise<string> {
+    const url = `${this.config.trongrid.baseUrl}/wallet/triggerconstantcontract`;
+    const usdtContract = this.config.contracts.usdt;
+
+    const payload = {
+      contract_address: usdtContract,
+      function_selector: 'balanceOf(address)',
+      parameter: this.encodeAddressParameter(address),
+      owner_address: address,
+      visible: true,
+    };
+
+    let lastError: Error | null = null;
+    const maxRetries = 3;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await axios.post(url, payload, {
+          headers: {
+            'TRON-PRO-API-KEY': this.config.trongrid.apiKey,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000, // 10 second timeout for balance queries
+        });
+
+        return this.parseBalanceResponse(response.data);
+      } catch (error) {
+        lastError = error as Error;
+        const axiosError = error as AxiosError;
+        const statusCode = axiosError.response?.status;
+
+        // Retry on rate limit (429) or server errors (5xx)
+        if (statusCode === 429 || (statusCode && statusCode >= 500)) {
+          if (attempt < maxRetries) {
+            const delay = this.calculateBackoffDelay(attempt);
+            this.logger.warn(
+              `TronGrid balance API error (${statusCode}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
+            );
+            await this.sleep(delay);
+            continue;
+          }
+        }
+
+        // Do not retry on other errors (4xx except 429)
+        throw new TronGridApiError('Failed to fetch USDT balance', statusCode, url, error as Error);
+      }
+    }
+
+    // All retries exhausted
+    throw new TronGridApiError(
+      'Max retries exceeded for balance query',
+      (lastError as AxiosError)?.response?.status,
+      url,
+      lastError as Error,
+    );
+  }
+
+  /**
+   * Encode TRON address as 32-byte hex parameter for smart contract call.
+   *
+   * TRON addresses are Base58Check encoded with a 0x41 prefix.
+   * For balanceOf(address) parameter, we need:
+   * 1. Decode Base58Check to get raw bytes
+   * 2. Remove the 0x41 prefix (1 byte)
+   * 3. Remove the 4-byte checksum
+   * 4. Pad the remaining 20-byte address to 32 bytes (64 hex chars)
+   *
+   * @param address - Base58-encoded TRON address (starts with T)
+   * @returns 64-character hex string (32 bytes, left-padded with zeros)
+   */
+  private encodeAddressParameter(address: string): string {
+    // Decode Base58Check address to hex (without 41 prefix and checksum)
+    const addressHex = this.decodeBase58Address(address);
+    // Pad to 32 bytes (64 hex characters) with leading zeros
+    return addressHex.padStart(64, '0');
+  }
+
+  /**
+   * Decode TRON Base58Check address to 20-byte hex string.
+   *
+   * TRON address format:
+   * - Base58Check encoded
+   * - First byte: 0x41 (network identifier for mainnet)
+   * - Next 20 bytes: address
+   * - Last 4 bytes: checksum (double SHA256)
+   *
+   * @param address - TRON Base58Check address (34 characters, starts with T)
+   * @returns 40-character hex string (20 bytes address without prefix/checksum)
+   */
+  private decodeBase58Address(address: string): string {
+    const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    const ALPHABET_MAP: Record<string, number> = {};
+    for (let i = 0; i < ALPHABET.length; i++) {
+      ALPHABET_MAP[ALPHABET[i]] = i;
+    }
+
+    // Decode Base58 to bytes
+    let num = BigInt(0);
+    for (const char of address) {
+      const value = ALPHABET_MAP[char];
+      if (value === undefined) {
+        throw new TronGridApiError(`Invalid character in address: ${char}`);
+      }
+      num = num * BigInt(58) + BigInt(value);
+    }
+
+    // Convert BigInt to hex string
+    let hex = num.toString(16);
+
+    // Ensure even length
+    if (hex.length % 2 !== 0) {
+      hex = `0${hex}`;
+    }
+
+    // Handle leading zeros in Base58 (each leading '1' = one 0x00 byte)
+    let leadingZeros = 0;
+    for (const char of address) {
+      if (char === '1') {
+        leadingZeros++;
+      } else {
+        break;
+      }
+    }
+    hex = '00'.repeat(leadingZeros) + hex;
+
+    // Full decoded data: 1 byte prefix (41) + 20 bytes address + 4 bytes checksum = 25 bytes = 50 hex chars
+    // We want the 20-byte address (40 hex chars), which is after the prefix and before checksum
+    // Skip first 2 chars (41 prefix), take next 40 chars (20 bytes address)
+    if (hex.length < 50) {
+      throw new TronGridApiError(
+        `Invalid address encoding: decoded hex too short (${hex.length} chars)`,
+      );
+    }
+
+    // Extract 20-byte address (skip 41 prefix, ignore 4-byte checksum)
+    return hex.slice(2, 42);
+  }
+
+  /**
+   * Parse USDT balance from TronGrid triggerconstantcontract response.
+   *
+   * @param data - Response data from triggerconstantcontract
+   * @returns Balance as string (raw units, 6 decimals)
+   * @throws {TronGridApiError} If response is invalid or indicates failure
+   */
+  private parseBalanceResponse(data: {
+    result?: { result?: boolean };
+    constant_result?: string[];
+  }): string {
+    // Check for API-level errors
+    if (data.result && data.result.result === false) {
+      throw new TronGridApiError('Balance query returned error result');
+    }
+
+    if (!data.constant_result || data.constant_result.length === 0) {
+      throw new TronGridApiError('Invalid balance response: missing constant_result');
+    }
+
+    const hexBalance = data.constant_result[0];
+
+    // Handle empty or zero result
+    if (!hexBalance || hexBalance === '' || /^0+$/.test(hexBalance)) {
+      return '0';
+    }
+
+    // Remove '0x' prefix if present
+    const cleanHex = hexBalance.startsWith('0x') ? hexBalance.slice(2) : hexBalance;
+
+    // Convert hex to BigInt then to decimal string for precision
+    try {
+      const balance = BigInt(`0x${cleanHex}`).toString();
+      return balance;
+    } catch {
+      throw new TronGridApiError(`Invalid balance hex value: ${hexBalance}`);
+    }
+  }
 }

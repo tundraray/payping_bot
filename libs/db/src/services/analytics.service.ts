@@ -3,7 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, asc, eq, gte, lt, max, sql } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDB } from '../database.provider';
-import { monthlyPositions, recipientWallets, transactions } from '../schema';
+import { monthlyPositions, recipientWallets, salaryHistory, transactions } from '../schema';
 import {
   ClassificationService,
   type PaymentInfo,
@@ -42,6 +42,12 @@ export interface GroupedAnalyticsResult {
   oneTime: AnalyticsResult[];
   unknown: AnalyticsResult[];
   fired: FiredEmployeeResult[];
+}
+
+export interface SalaryChangeInfo {
+  walletAddress: string;
+  changePercent: number;
+  isIncrease: boolean;
 }
 
 interface RecipientMonthData {
@@ -203,27 +209,36 @@ export class AnalyticsService {
   /**
    * Get grouped analytics data for a specific month.
    *
-   * Uses previous month (N-1) as baseline:
-   * - All wallets from N-1 are included
-   * - Wallets in N overlay N-1 data
-   * - Wallets in N-1 but NOT in N: show with amount=0, positionChange='miss'
-   * - Wallets in N but NOT in N-1: show with positionChange='new'
+   * Uses comparison month as baseline:
+   * - All wallets from comparison month are included
+   * - Wallets in target month overlay comparison month data
+   * - Wallets in comparison but NOT in target: show with amount=0, positionChange='miss'
+   * - Wallets in target but NOT in comparison: show with positionChange='new'
    *
-   * @param yearMonth - Month in 'YYYY-MM' format
+   * @param yearMonth - Target month in 'YYYY-MM' format
+   * @param comparisonMonth - Optional comparison month (defaults to N-1 if not provided)
    * @returns Analytics data grouped by classification
    *
    * @see AC-1.4: Returns groups in order: Employees, Freelancers, One-time, Unknown, Fired
    * @see AC-2.3: Sorted by payment timestamp within group
    * @see AC-2.6: Position is within classification group
    */
-  async getGroupedAnalytics(yearMonth: string): Promise<GroupedAnalyticsResult> {
+  async getGroupedAnalytics(
+    yearMonth: string,
+    comparisonMonth?: string,
+  ): Promise<GroupedAnalyticsResult> {
     try {
-      this.logger.log('getGroupedAnalytics called', { yearMonth });
+      // Calculate comparison month if not provided (default to N-1)
+      let prevYearMonth: string;
+      if (comparisonMonth) {
+        prevYearMonth = comparisonMonth;
+      } else {
+        const [year, month] = yearMonth.split('-').map(Number);
+        const prevDate = new Date(Date.UTC(year, month - 2, 1));
+        prevYearMonth = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      }
 
-      // Get previous month for baseline
-      const [year, month] = yearMonth.split('-').map(Number);
-      const prevDate = new Date(Date.UTC(year, month - 2, 1));
-      const prevYearMonth = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, '0')}`;
+      this.logger.log('getGroupedAnalytics called', { yearMonth, comparisonMonth: prevYearMonth });
 
       // Get previous month positions with wallet data (baseline)
       const prevPositions = await this.db
@@ -391,6 +406,56 @@ export class AnalyticsService {
     } catch (error) {
       this.logger.error('Failed to get grouped analytics', { yearMonth, error });
       throw error;
+    }
+  }
+
+  /**
+   * Get salary changes for a specific month.
+   * Returns salary changes detected in the given month for employees.
+   *
+   * @param yearMonth - Month in 'YYYY-MM' format
+   * @returns Map of wallet address to salary change info
+   */
+  async getSalaryChangesForMonth(yearMonth: string): Promise<Map<string, SalaryChangeInfo>> {
+    try {
+      const [year, month] = yearMonth.split('-').map(Number);
+      const startTimestamp = new Date(Date.UTC(year, month - 1, 1));
+      const endTimestamp = new Date(Date.UTC(year, month, 1));
+
+      const changes = await this.db
+        .select({
+          walletAddress: recipientWallets.address,
+          changePercent: salaryHistory.changePercent,
+          previousAmount: salaryHistory.previousAmount,
+          newAmount: salaryHistory.newAmount,
+        })
+        .from(salaryHistory)
+        .innerJoin(recipientWallets, eq(salaryHistory.recipientWalletId, recipientWallets.id))
+        .where(
+          and(
+            gte(salaryHistory.detectedAt, startTimestamp),
+            lt(salaryHistory.detectedAt, endTimestamp),
+          ),
+        );
+
+      const result = new Map<string, SalaryChangeInfo>();
+
+      for (const change of changes) {
+        const changePercentNum = Number.parseFloat(change.changePercent ?? '0');
+        const prevAmount = Number.parseFloat(change.previousAmount);
+        const newAmount = Number.parseFloat(change.newAmount);
+
+        result.set(change.walletAddress, {
+          walletAddress: change.walletAddress,
+          changePercent: changePercentNum,
+          isIncrease: newAmount > prevAmount,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error('Failed to get salary changes for month', { yearMonth, error });
+      return new Map();
     }
   }
 

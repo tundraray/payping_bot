@@ -19,6 +19,7 @@ describe('StartHandler', () => {
     username: 'testuser',
     firstName: 'Test',
     lastName: null,
+    languageCode: 'en',
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -72,28 +73,40 @@ describe('StartHandler', () => {
 
   /**
    * Creates a mock BotContext for testing.
-   * @param telegramId - The Telegram user ID
+   * @param telegramId - The Telegram user ID (optional, undefined creates context without user)
    * @returns Mock BotContext with basic properties
    */
-  function createMockContext(telegramId: number): jest.Mocked<BotContext> {
-    return {
-      from: {
-        id: telegramId,
-        username: 'testuser',
-        first_name: 'Test',
-        last_name: undefined,
-        language_code: 'en',
-        is_bot: false,
-      },
+  function createMockContext(telegramId?: number): jest.Mocked<BotContext> {
+    const ctx = {
       reply: jest.fn(),
       t: jest.fn((key: string) => key), // Returns key as translation for testing
+      api: {
+        setMyCommands: jest.fn().mockResolvedValue(true),
+      },
+      chat: { id: telegramId },
     } as unknown as jest.Mocked<BotContext>;
+
+    if (telegramId !== undefined) {
+      Object.defineProperty(ctx, 'from', {
+        value: {
+          id: telegramId,
+          username: 'testuser',
+          first_name: 'Test',
+          last_name: undefined,
+          language_code: 'en',
+          is_bot: false,
+        },
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    return ctx;
   }
 
   describe('handleStart', () => {
     it('should return early when no user ID in context', async () => {
-      const ctx = createMockContext(123456);
-      ctx.from = undefined;
+      const ctx = createMockContext(); // No telegramId means ctx.from is undefined
 
       await handler.handleStart(ctx);
 
@@ -241,9 +254,9 @@ describe('StartHandler', () => {
       subscriptionsService.getActive.mockResolvedValue({
         id: 1,
         userId: mockUser.id,
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        isActive: true,
+        status: 'active' as const,
+        startsAt: new Date(),
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         updatedAt: new Date(),
       });

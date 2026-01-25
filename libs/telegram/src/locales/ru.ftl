@@ -53,6 +53,13 @@ status-not-subscribed = 🔔 Не подписаны
 btn-subscribe = Подписаться
 btn-unsubscribe = Отписаться
 
+# Описания команд меню
+menu-start = Запустить бота
+menu-analytics = Аналитика выплат
+
+# Призыв подписаться
+subscribe-for-analytics = 📊 Подпишись, чтобы получить доступ к детальной аналитике выплат!
+
 # Ошибки
 error-generic = ⚠️ Что-то пошло не так. Попробуйте ещё раз.
 error-rate-limit = ⏳ Слишком много запросов. Подождите немного.
@@ -118,3 +125,29 @@ month-september = Сентябрь
 month-october = Октябрь
 month-november = Ноябрь
 month-december = Декабрь
+
+# Уведомление о начале сессии выплат
+payout-started = 🚀 <b>Выплата началась</b>
+
+    Кошелёк начал выплату средств.
+    Вы будете получать уведомления о каждом переводе.
+
+    { $time }
+
+# Уведомление об отдельной исходящей транзакции
+payout-transaction = 💸 <b>Перевод #{ $txNumber }</b>
+
+    <b>{ $amount } USDT</b> → { $recipient }
+
+    Итого за сессию: { $sessionTotal } USDT
+
+# Уведомление о завершении сессии выплат
+payout-completed = ✅ <b>Выплата завершена</b>
+
+    📊 <b>Итоги</b>
+    • Переводов: { $txCount }
+    • Всего выплачено: { $totalAmount } USDT
+    • Длительность: { $duration } мин
+    • Остаток на балансе: { $endBalance } USDT
+
+    { $time }

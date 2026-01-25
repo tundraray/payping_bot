@@ -20,6 +20,7 @@ describe('SubscribeHandler', () => {
     username: 'testuser',
     firstName: 'Test',
     lastName: null,
+    languageCode: 'en',
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -74,28 +75,36 @@ describe('SubscribeHandler', () => {
 
   /**
    * Creates a mock BotContext for testing.
-   * @param telegramId - The Telegram user ID
+   * @param telegramId - The Telegram user ID (optional, undefined creates context without user)
    * @returns Mock BotContext with basic properties
    */
-  function createMockContext(telegramId: number): jest.Mocked<BotContext> {
-    return {
-      from: {
-        id: telegramId,
-        username: 'testuser',
-        first_name: 'Test',
-        last_name: undefined,
-        language_code: 'en',
-        is_bot: false,
-      },
+  function createMockContext(telegramId?: number): jest.Mocked<BotContext> {
+    const ctx = {
       reply: jest.fn(),
       t: jest.fn((key: string) => key),
     } as unknown as jest.Mocked<BotContext>;
+
+    if (telegramId !== undefined) {
+      Object.defineProperty(ctx, 'from', {
+        value: {
+          id: telegramId,
+          username: 'testuser',
+          first_name: 'Test',
+          last_name: undefined,
+          language_code: 'en',
+          is_bot: false,
+        },
+        writable: true,
+        configurable: true,
+      });
+    }
+
+    return ctx;
   }
 
   describe('handleSubscribe', () => {
     it('should return early when no user ID in context', async () => {
-      const ctx = createMockContext(123456);
-      ctx.from = undefined;
+      const ctx = createMockContext(); // No telegramId means ctx.from is undefined
 
       await handler.handleSubscribe(ctx);
 
@@ -179,8 +188,7 @@ describe('SubscribeHandler', () => {
 
   describe('handleUnsubscribe', () => {
     it('should return early when no user ID in context', async () => {
-      const ctx = createMockContext(123456);
-      ctx.from = undefined;
+      const ctx = createMockContext(); // No telegramId means ctx.from is undefined
 
       await handler.handleUnsubscribe(ctx);
 

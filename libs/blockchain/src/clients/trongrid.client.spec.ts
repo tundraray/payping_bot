@@ -389,6 +389,304 @@ describe('TronGridClient', () => {
   });
 
   // ===========================================================================
+  // getUSDTBalance Tests (Task 1.4)
+  // ===========================================================================
+  describe('getUSDTBalance', () => {
+    // Use a valid TRON Base58 address for testing
+    // TRON addresses use Base58 alphabet: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+    // Note: 0, O, I, l are NOT valid Base58 characters
+    const TEST_WALLET_ADDRESS = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+
+    // -------------------------------------------------------------------------
+    // Valid balance response: hex parsing works
+    // -------------------------------------------------------------------------
+    it('should parse valid balance response correctly', async () => {
+      // 5000.00 USDT = 5,000,000,000 raw units (6 decimals)
+      // 5000000000 in hex = 0x12a05f200
+      // Padded to 64 chars: 0000000000000000000000000000000000000000000000000000012a05f200
+      const mockResponse = {
+        data: {
+          result: { result: true },
+          constant_result: ['0000000000000000000000000000000000000000000000000000012a05f200'],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      const balance = await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(balance).toBe('5000000000');
+    });
+
+    // -------------------------------------------------------------------------
+    // Zero balance: returns "0"
+    // -------------------------------------------------------------------------
+    it('should return "0" for zero balance', async () => {
+      const mockResponse = {
+        data: {
+          result: { result: true },
+          constant_result: ['0000000000000000000000000000000000000000000000000000000000000000'],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      const balance = await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(balance).toBe('0');
+    });
+
+    it('should return "0" for empty hex string', async () => {
+      const mockResponse = {
+        data: {
+          result: { result: true },
+          constant_result: [''],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      const balance = await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(balance).toBe('0');
+    });
+
+    // -------------------------------------------------------------------------
+    // Large balance: BigInt handles correctly
+    // -------------------------------------------------------------------------
+    it('should handle large balances correctly', async () => {
+      // 1,000,000,000,000,000 raw units (very large balance)
+      // In hex = 0x38d7ea4c68000
+      // Padded to 64 chars: 00000000000000000000000000000000000000000000000000038d7ea4c68000
+      const mockResponse = {
+        data: {
+          result: { result: true },
+          constant_result: ['00000000000000000000000000000000000000000000000000038d7ea4c68000'],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      const balance = await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(balance).toBe('1000000000000000');
+    });
+
+    it('should handle balance with 0x prefix', async () => {
+      // 100 USDT = 100,000,000 raw units = 0x5f5e100
+      const mockResponse = {
+        data: {
+          result: { result: true },
+          constant_result: ['0x0000000000000000000000000000000000000000000000000000000005f5e100'],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      const balance = await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(balance).toBe('100000000');
+    });
+
+    // -------------------------------------------------------------------------
+    // API error: throws TronGridApiError
+    // -------------------------------------------------------------------------
+    it('should throw TronGridApiError on network error', async () => {
+      mockedAxios.post.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(TronGridApiError);
+    });
+
+    it('should throw TronGridApiError with correct message on network error', async () => {
+      mockedAxios.post.mockRejectedValueOnce(new Error('Network error'));
+
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(
+        'Failed to fetch USDT balance',
+      );
+    });
+
+    it('should throw TronGridApiError on HTTP 4xx (except 429)', async () => {
+      const clientError = { response: { status: 400 } };
+
+      mockedAxios.post.mockRejectedValueOnce(clientError);
+
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(TronGridApiError);
+    });
+
+    // -------------------------------------------------------------------------
+    // Timeout: throws error
+    // -------------------------------------------------------------------------
+    it('should throw error on timeout', async () => {
+      const timeoutError = new Error('timeout of 10000ms exceeded');
+      timeoutError.name = 'AxiosError';
+
+      mockedAxios.post.mockRejectedValueOnce(timeoutError);
+
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow();
+    });
+
+    // -------------------------------------------------------------------------
+    // Invalid response: throws error
+    // -------------------------------------------------------------------------
+    it('should throw TronGridApiError when constant_result is empty array', async () => {
+      const mockResponse = {
+        data: {
+          result: { result: true },
+          constant_result: [],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      // parseBalanceResponse throws TronGridApiError which is caught and re-thrown
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(TronGridApiError);
+    });
+
+    it('should throw TronGridApiError when constant_result is undefined', async () => {
+      const mockResponse = {
+        data: {
+          result: { result: true },
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      // parseBalanceResponse throws TronGridApiError which is caught and re-thrown
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(TronGridApiError);
+    });
+
+    it('should throw TronGridApiError when result.result is false', async () => {
+      const mockResponse = {
+        data: {
+          result: { result: false },
+          constant_result: ['0000000000000000000000000000000000000000000000000000000000000000'],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      // parseBalanceResponse throws TronGridApiError which is caught and re-thrown
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(TronGridApiError);
+    });
+
+    // -------------------------------------------------------------------------
+    // Retry logic: retries on 429 and 5xx
+    // -------------------------------------------------------------------------
+    it('should retry with backoff on HTTP 429', async () => {
+      const rateLimitError = { response: { status: 429 } };
+      const successResponse = {
+        data: {
+          result: { result: true },
+          constant_result: ['0000000000000000000000000000000000000000000000000000000005f5e100'],
+        },
+      };
+
+      mockedAxios.post.mockRejectedValueOnce(rateLimitError).mockResolvedValueOnce(successResponse);
+
+      const balance = await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(balance).toBe('100000000');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry up to 3 times on HTTP 5xx', async () => {
+      const serverError = { response: { status: 500 } };
+
+      mockedAxios.post
+        .mockRejectedValueOnce(serverError)
+        .mockRejectedValueOnce(serverError)
+        .mockRejectedValueOnce(serverError)
+        .mockRejectedValueOnce(serverError);
+
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(TronGridApiError);
+
+      // Initial + 3 retries = 4 calls
+      expect(mockedAxios.post).toHaveBeenCalledTimes(4);
+    });
+
+    it('should succeed after retry on HTTP 5xx', async () => {
+      const serverError = { response: { status: 503 } };
+      const successResponse = {
+        data: {
+          result: { result: true },
+          constant_result: ['0000000000000000000000000000000000000000000000000000000005f5e100'],
+        },
+      };
+
+      mockedAxios.post
+        .mockRejectedValueOnce(serverError)
+        .mockRejectedValueOnce(serverError)
+        .mockResolvedValueOnce(successResponse);
+
+      const balance = await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(balance).toBe('100000000');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(3);
+    });
+
+    it('should throw TronGridApiError when all retries fail on HTTP 5xx', async () => {
+      const serverError = { response: { status: 500 } };
+
+      mockedAxios.post
+        .mockRejectedValueOnce(serverError)
+        .mockRejectedValueOnce(serverError)
+        .mockRejectedValueOnce(serverError)
+        .mockRejectedValueOnce(serverError);
+
+      // After exhausting retries, the final attempt fails and throws from catch block
+      await expect(client.getUSDTBalance(TEST_WALLET_ADDRESS)).rejects.toThrow(
+        'Failed to fetch USDT balance',
+      );
+    });
+
+    // -------------------------------------------------------------------------
+    // Address encoding: parameter is hex string
+    // -------------------------------------------------------------------------
+    it('should correctly encode address parameter in request', async () => {
+      const mockResponse = {
+        data: {
+          result: { result: true },
+          constant_result: ['0000000000000000000000000000000000000000000000000000000000000000'],
+        },
+      };
+
+      mockedAxios.post.mockResolvedValueOnce(mockResponse);
+
+      await client.getUSDTBalance(TEST_WALLET_ADDRESS);
+
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        `${mockConfig.trongrid.baseUrl}/wallet/triggerconstantcontract`,
+        expect.objectContaining({
+          contract_address: USDT_CONTRACT_ADDRESS,
+          function_selector: 'balanceOf(address)',
+          parameter: expect.stringMatching(/^[0-9a-f]{64}$/), // 64 hex chars (32 bytes)
+          owner_address: TEST_WALLET_ADDRESS,
+          visible: true,
+        }),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'TRON-PRO-API-KEY': 'test-api-key',
+            'Content-Type': 'application/json',
+          }),
+          timeout: 10000,
+        }),
+      );
+    });
+
+    it('should throw error for invalid address characters', async () => {
+      // Characters like !, @, # are not valid in Base58
+      await expect(client.getUSDTBalance('TXY!@#invalid')).rejects.toThrow(TronGridApiError);
+    });
+
+    it('should throw error for address containing invalid Base58 character 0', async () => {
+      // 0 is not a valid Base58 character
+      await expect(client.getUSDTBalance('T0000000000000000000000000000000000')).rejects.toThrow(
+        'Invalid character in address: 0',
+      );
+    });
+  });
+
+  // ===========================================================================
   // TronGridApiError Tests
   // ===========================================================================
   describe('TronGridApiError', () => {

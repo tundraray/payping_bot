@@ -53,6 +53,13 @@ status-not-subscribed = 🔔 Не підписані
 btn-subscribe = Підписатись
 btn-unsubscribe = Відписатись
 
+# Описи команд меню
+menu-start = Запустити бота
+menu-analytics = Аналітика виплат
+
+# Заклик підписатись
+subscribe-for-analytics = 📊 Підпишись, щоб отримати доступ до детальної аналітики виплат!
+
 # Помилки
 error-generic = ⚠️ Щось пішло не так. Спробуйте ще раз.
 error-rate-limit = ⏳ Забагато запитів. Зачекайте трохи.
@@ -118,3 +125,29 @@ month-september = Вересень
 month-october = Жовтень
 month-november = Листопад
 month-december = Грудень
+
+# Сповіщення про початок сесії виплат
+payout-started = 🚀 <b>Виплата розпочалась</b>
+
+    Гаманець почав виплату коштів.
+    Ви отримуватимете сповіщення про кожен переказ.
+
+    { $time }
+
+# Сповіщення про окрему вихідну транзакцію
+payout-transaction = 💸 <b>Переказ #{ $txNumber }</b>
+
+    <b>{ $amount } USDT</b> → { $recipient }
+
+    Разом за сесію: { $sessionTotal } USDT
+
+# Сповіщення про завершення сесії виплат
+payout-completed = ✅ <b>Виплата завершена</b>
+
+    📊 <b>Підсумки</b>
+    • Переказів: { $txCount }
+    • Всього виплачено: { $totalAmount } USDT
+    • Тривалість: { $duration } хв
+    • Залишок на балансі: { $endBalance } USDT
+
+    { $time }

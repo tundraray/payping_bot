@@ -5,6 +5,7 @@ import telegramConfig from './config/telegram.config';
 import { AnalyticsHandler } from './handlers/analytics.handler';
 import { StartHandler } from './handlers/start.handler';
 import { SubscribeHandler } from './handlers/subscribe.handler';
+import { PayoutListener } from './listeners/payout.listener';
 import { TransactionListener } from './listeners/transaction.listener';
 import { TelegramService } from './telegram.service';
 
@@ -18,6 +19,7 @@ import { TelegramService } from './telegram.service';
  * - /subscribe and /unsubscribe commands
  * - /analytics and /rating commands for payout analytics
  * - Transaction notifications via event listener
+ * - Payout session notifications via event listener
  *
  * Configuration:
  * - TELEGRAM_BOT_TOKEN: Bot token from @BotFather (required)
@@ -29,6 +31,7 @@ import { TelegramService } from './telegram.service';
  * - SubscribeHandler: /subscribe and /unsubscribe commands
  * - AnalyticsHandler: /analytics and /rating commands
  * - TransactionListener: Event listener for transaction notifications
+ * - PayoutListener: Event listener for payout session notifications
  */
 @Module({
   imports: [ConfigModule.forFeature(telegramConfig), DbModule],
@@ -38,6 +41,7 @@ import { TelegramService } from './telegram.service';
     SubscribeHandler,
     AnalyticsHandler,
     TransactionListener,
+    PayoutListener,
   ],
   exports: [TelegramService],
 })

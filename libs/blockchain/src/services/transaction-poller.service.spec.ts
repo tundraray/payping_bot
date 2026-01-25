@@ -112,7 +112,11 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
       transactionsService.getLastTimestamp.mockResolvedValue(lastTimestamp);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
 
@@ -139,7 +143,11 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
       transactionsService.getLastTimestamp.mockResolvedValue(savedTimestamp);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
       jest.advanceTimersByTime(100);
@@ -170,7 +178,11 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getLastTimestamp.mockResolvedValue(null);
       tronGridClient.getAccountCreationTimestamp.mockResolvedValue(walletCreationTimestamp);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
       jest.advanceTimersByTime(100);
@@ -198,7 +210,11 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getLastTimestamp.mockResolvedValue(null);
       tronGridClient.getAccountCreationTimestamp.mockResolvedValue(null);
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
       jest.advanceTimersByTime(100);
@@ -235,13 +251,17 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
 
       // Make first poll take a long time
-      let resolveFirstPoll: () => void;
+      let resolveFirstPoll: (() => void) | undefined;
       const slowPollPromise = new Promise<Transaction[]>((resolve) => {
         resolveFirstPoll = () => resolve([]);
       });
       tronGridClient.fetchUSDTTransactions.mockReturnValueOnce(slowPollPromise);
 
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
 
@@ -260,7 +280,7 @@ describe('TransactionPollerService Integration Tests', () => {
       expect(tronGridClient.fetchUSDTTransactions.mock.calls.length).toBe(initialCallCount);
 
       // Resolve first poll
-      if (resolveFirstPoll) resolveFirstPoll();
+      resolveFirstPoll?.();
       await Promise.resolve();
     });
   });
@@ -280,12 +300,16 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
       transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
 
-      let resolveCurrentPoll: () => void;
+      let resolveCurrentPoll: (() => void) | undefined;
       const currentPollPromise = new Promise<Transaction[]>((resolve) => {
         resolveCurrentPoll = () => resolve([]);
       });
       tronGridClient.fetchUSDTTransactions.mockReturnValue(currentPollPromise);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
       jest.advanceTimersByTime(100);
@@ -298,7 +322,7 @@ describe('TransactionPollerService Integration Tests', () => {
       expect(service.getState()).toBe(PollerState.SHUTTING_DOWN);
 
       // Resolve current poll
-      if (resolveCurrentPoll) resolveCurrentPoll();
+      resolveCurrentPoll?.();
 
       await stopPromise;
 
@@ -317,7 +341,11 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
       transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
       jest.advanceTimersByTime(100);
@@ -361,7 +389,11 @@ describe('TransactionPollerService Integration Tests', () => {
         ])
         .mockResolvedValueOnce([]);
 
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 2, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 2,
+        skipped: 0,
+        notified: 2,
+      });
 
       await service.startPolling();
 
@@ -402,7 +434,11 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
       transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
 
@@ -431,7 +467,11 @@ describe('TransactionPollerService Integration Tests', () => {
       transactionsService.getMonitoredWalletAddress.mockResolvedValue(walletAddress);
       transactionsService.getLastTimestamp.mockResolvedValue(Date.now());
       tronGridClient.fetchUSDTTransactions.mockResolvedValue([]);
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
       await service.startPolling(); // Second call should be ignored
@@ -460,7 +500,11 @@ describe('TransactionPollerService Integration Tests', () => {
         .mockRejectedValueOnce(new Error('API Error'))
         .mockResolvedValueOnce([]);
 
-      processorService.processUSDTTransactions.mockResolvedValue({ processed: 0, skipped: 0 });
+      processorService.processUSDTTransactions.mockResolvedValue({
+        processed: 0,
+        skipped: 0,
+        notified: 0,
+      });
 
       await service.startPolling();
 

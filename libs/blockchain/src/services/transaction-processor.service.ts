@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TRANSACTION_NEW_EVENT } from '../events/transaction.events';
 import type { Transaction, TransactionNewEvent } from '../interfaces/transaction.interface';
 import { DeduplicationService } from './deduplication.service';
+import { PayoutSessionService } from './payout-session.service';
 
 /**
  * Service for processing blockchain transactions.
@@ -25,6 +26,7 @@ export class TransactionProcessorService {
   constructor(
     private readonly deduplicationService: DeduplicationService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly payoutSessionService: PayoutSessionService,
   ) {}
 
   /**
@@ -109,6 +111,8 @@ export class TransactionProcessorService {
           `Saved and notified incoming transaction: ${transaction.hash.substring(0, 16)}...`,
         );
       } else {
+        // Outgoing transaction - hook into PayoutSessionService (Task 08)
+        await this.handleOutgoingTransactionForPayout(transaction);
         this.logger.debug(
           `Saved outgoing transaction (no notification): ${transaction.hash.substring(0, 16)}...`,
         );
@@ -128,6 +132,26 @@ export class TransactionProcessorService {
    */
   private isIncomingTransaction(transaction: Transaction, walletAddress: string): boolean {
     return transaction.toAddress.toLowerCase() === walletAddress.toLowerCase();
+  }
+
+  /**
+   * Handle outgoing transaction for payout session tracking.
+   * Catches and logs errors but does not throw - processing should continue.
+   *
+   * @param transaction - Outgoing transaction to handle
+   *
+   * @see Task-08 - Hook into PayoutSessionService for outgoing transactions
+   */
+  private async handleOutgoingTransactionForPayout(transaction: Transaction): Promise<void> {
+    try {
+      await this.payoutSessionService.handleOutgoingTransaction(transaction);
+    } catch (error) {
+      this.logger.error('Payout session handling failed', {
+        error: error instanceof Error ? error.message : String(error),
+        txHash: transaction.hash,
+      });
+      // Continue processing - don't block on payout session errors
+    }
   }
 
   /**

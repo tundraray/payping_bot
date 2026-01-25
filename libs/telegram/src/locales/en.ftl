@@ -53,6 +53,13 @@ status-not-subscribed = 🔔 Not subscribed
 btn-subscribe = Subscribe
 btn-unsubscribe = Unsubscribe
 
+# Menu command descriptions
+menu-start = Start the bot
+menu-analytics = View payout analytics
+
+# Subscribe prompt
+subscribe-for-analytics = 📊 Subscribe to get access to detailed payout analytics!
+
 # Errors
 error-generic = ⚠️ Something went wrong. Please try again.
 error-rate-limit = ⏳ Too many requests. Please wait a moment.
@@ -118,3 +125,29 @@ month-september = September
 month-october = October
 month-november = November
 month-december = December
+
+# Payout session started notification
+payout-started = 🚀 <b>Payout Session Started</b>
+
+    The wallet has started disbursing funds.
+    You will receive updates for each transfer.
+
+    { $time }
+
+# Individual outgoing transaction notification
+payout-transaction = 💸 <b>Transfer #{ $txNumber }</b>
+
+    <b>{ $amount } USDT</b> → { $recipient }
+
+    Session total: { $sessionTotal } USDT
+
+# Payout session completed notification
+payout-completed = ✅ <b>Payout Session Completed</b>
+
+    📊 <b>Summary</b>
+    • Transfers: { $txCount }
+    • Total paid: { $totalAmount } USDT
+    • Duration: { $duration } min
+    • Remaining balance: { $endBalance } USDT
+
+    { $time }

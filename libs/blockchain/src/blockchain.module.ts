@@ -6,6 +6,7 @@ import { BlockchainService } from './blockchain.service';
 import { TronGridClient } from './clients/trongrid.client';
 import blockchainConfig from './config/blockchain.config';
 import { DeduplicationService } from './services/deduplication.service';
+import { PayoutSessionService } from './services/payout-session.service';
 import { TransactionPollerService } from './services/transaction-poller.service';
 import { TransactionProcessorService } from './services/transaction-processor.service';
 
@@ -63,6 +64,7 @@ import { TransactionProcessorService } from './services/transaction-processor.se
 
     // Application layer
     TransactionProcessorService,
+    PayoutSessionService,
 
     // Orchestration layer
     TransactionPollerService,
