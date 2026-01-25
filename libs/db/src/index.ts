@@ -15,6 +15,7 @@ export {
   type ProcessingResult,
   type SalaryChangeInfo,
 } from './services/analytics.service';
+export { AnalyticsSchedulerService } from './services/analytics-scheduler.service';
 export {
   type ClassificationResult,
   ClassificationService,
@@ -35,6 +36,6 @@ export { type User, UsersService } from './services/users.service';
 
 // DTO exports
 export * from './types/dto';
-
+export { maskTransactionHash, maskWalletAddress } from './utils/mask.utils';
 // Utils exports (data conversion only, display formatting is in @app/telegram)
 export { formatUsdt, toRawUsdt } from './utils/usdt.utils';

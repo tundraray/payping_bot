@@ -3,6 +3,8 @@
  * These functions handle presentation-layer formatting only.
  */
 
+import { maskTransactionHash, maskWalletAddress } from '@app/db';
+
 /**
  * USDT TRC20 token has 6 decimal places.
  */
@@ -65,38 +67,29 @@ export function formatWithSeparators(value: string): string {
 
 /**
  * Truncates a blockchain address for display.
- * Shows first 6 and last 4 characters.
+ * Uses unified masking: first 4 + last 3 characters.
  *
  * @param address - Full address string
- * @returns Truncated address (e.g., "TRX7nK...9kPm")
+ * @returns Truncated address (e.g., "TRX7...kPm")
  */
-export function truncateAddress(address: string): string {
-  if (address.length <= 13) return address;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
+export const truncateAddress = maskWalletAddress;
 
 /**
  * Truncates a blockchain address for analytics display.
- * Shows first 4 and last 3 characters.
+ * Uses unified masking: first 4 + last 3 characters.
  *
  * @param address - Full address string
  * @returns Truncated address (e.g., "TRX7...kPm")
  *
  * @see AC-2.2: Wallet truncation first 4 + last 3
  */
-export function truncateWalletForAnalytics(address: string): string {
-  if (address.length <= 10) return address;
-  return `${address.slice(0, 4)}...${address.slice(-3)}`;
-}
+export const truncateWalletForAnalytics = maskWalletAddress;
 
 /**
  * Truncates a transaction hash for display.
- * Shows first 8 and last 4 characters.
+ * Uses unified masking: first 8 + last 4 characters.
  *
  * @param hash - Full transaction hash
  * @returns Truncated hash (e.g., "a1b2c3d4...8bc1")
  */
-export function truncateHash(hash: string): string {
-  if (hash.length <= 16) return hash;
-  return `${hash.slice(0, 8)}...${hash.slice(-4)}`;
-}
+export const truncateHash = maskTransactionHash;
