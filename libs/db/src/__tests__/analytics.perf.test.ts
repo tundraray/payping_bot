@@ -328,11 +328,12 @@ describe('Analytics Performance Benchmark Tests', () => {
       const duration = Date.now() - startTime;
 
       // Assert
-      expect(result.walletAddress).toBe(recipient);
-      expect(result.processingTimeMs).toBeDefined();
+      expect(result).not.toBeNull();
+      expect(result!.walletAddress).toBe(recipient);
+      expect(result!.processingTimeMs).toBeDefined();
       expect(duration).toBeLessThan(PERFORMANCE_THRESHOLD_REALTIME);
 
-      console.log(`Real-time processing: ${duration}ms (reported: ${result.processingTimeMs}ms)`);
+      console.log(`Real-time processing: ${duration}ms (reported: ${result!.processingTimeMs}ms)`);
     });
 
     conditionalIt('should maintain performance with existing wallet updates', async () => {
@@ -383,7 +384,8 @@ describe('Analytics Performance Benchmark Tests', () => {
       const duration = Date.now() - startTime;
 
       // Assert
-      expect(result.classification).toBe('EMPLOYEE');
+      expect(result).not.toBeNull();
+      expect(result!.classification).toBe('EMPLOYEE');
       expect(duration).toBeLessThan(PERFORMANCE_THRESHOLD_REALTIME);
 
       console.log(`Update existing wallet: ${duration}ms`);
