@@ -103,6 +103,7 @@ export class PayoutSessionService {
       walletAddress: `${this.walletAddress.substring(0, 8)}...`,
       balanceThresholdUsdt: this.payoutConfig.balanceThresholdUsdt,
       timeoutMinutes: this.payoutConfig.timeoutMinutes,
+      inactivityTimeoutMinutes: this.payoutConfig.inactivityTimeoutMinutes,
       checkIntervalMs: this.payoutConfig.checkIntervalMs,
     });
   }
@@ -263,9 +264,10 @@ export class PayoutSessionService {
    * Periodic check for session timeout and balance threshold.
    *
    * Runs every 60 seconds (configurable via PAYOUT_CHECK_INTERVAL_MS).
-   * Checks two end conditions:
+   * Checks three end conditions in order:
    * 1. Balance < threshold (default 1000 USDT) - ends session with BALANCE_THRESHOLD
    * 2. Timeout (default 30 min) + balance decreased - ends session with TIMEOUT
+   * 3. Inactivity timeout (default 60 min) - ends session with INACTIVITY regardless of balance
    *
    * Protected by mutex to prevent race conditions with transaction handling.
    *
@@ -274,7 +276,7 @@ export class PayoutSessionService {
    * @see AC-2.3 - Balance check failure logs error, session continues
    * @see AC-3.1 - Session ends after 30 min + balance decreased
    * @see AC-3.2 - Balance checked to confirm decrease
-   * @see AC-3.3 - Session does NOT end if balance not decreased
+   * @see AC-3.3 - Session does NOT end if balance not decreased (but INACTIVITY still applies)
    */
   @Interval(60000)
   async checkTimeout(): Promise<void> {
@@ -285,6 +287,7 @@ export class PayoutSessionService {
 
       try {
         const currentBalance = await this.tronGridClient.getUSDTBalance(this.walletAddress);
+        const elapsed = Date.now() - this.state.lastTransactionAt.getTime();
 
         // Check balance threshold (AC-2.2)
         const thresholdRaw = BigInt(this.payoutConfig.balanceThresholdUsdt) * BigInt(1_000_000);
@@ -301,7 +304,6 @@ export class PayoutSessionService {
 
         // Check timeout with balance decrease (AC-3.1, AC-3.2, AC-3.3)
         const timeoutMs = this.payoutConfig.timeoutMinutes * 60 * 1000;
-        const elapsed = Date.now() - this.state.lastTransactionAt.getTime();
 
         if (elapsed >= timeoutMs) {
           // biome-ignore lint/style/noNonNullAssertion: checkTimeout only runs when session is active, startBalance is always set
@@ -315,13 +317,35 @@ export class PayoutSessionService {
               currentBalance,
             });
             await this.endSession('TIMEOUT', currentBalance);
-          } else {
-            this.logger.debug('Timeout elapsed but balance not decreased, continuing session', {
+            return;
+          }
+        }
+
+        // Check inactivity timeout - ends session regardless of balance change
+        const inactivityTimeoutMs = this.payoutConfig.inactivityTimeoutMinutes * 60 * 1000;
+
+        if (elapsed >= inactivityTimeoutMs) {
+          this.logger.log('Inactivity timeout elapsed, ending session', {
+            elapsedMinutes: Math.round(elapsed / 60000),
+            inactivityTimeoutMinutes: this.payoutConfig.inactivityTimeoutMinutes,
+            startBalance: this.state.startBalance,
+            currentBalance,
+          });
+          await this.endSession('INACTIVITY', currentBalance);
+          return;
+        }
+
+        // Log debug info for long-running sessions
+        if (elapsed >= timeoutMs) {
+          this.logger.debug(
+            'Timeout elapsed but balance not decreased, waiting for inactivity timeout',
+            {
               elapsedMinutes: Math.round(elapsed / 60000),
+              inactivityTimeoutMinutes: this.payoutConfig.inactivityTimeoutMinutes,
               startBalance: this.state.startBalance,
               currentBalance,
-            });
-          }
+            },
+          );
         }
       } catch (error) {
         // AC-2.3: Log error but don't end session - retry on next interval

@@ -23,8 +23,11 @@ export const PAYOUT_END_EVENT = 'payout.end';
 
 /**
  * Reason for payout session end.
+ * - BALANCE_THRESHOLD: Balance dropped below threshold (default 1000 USDT)
+ * - TIMEOUT: Regular timeout (30 min) with balance decrease
+ * - INACTIVITY: No transaction activity for extended period (1 hour) regardless of balance
  */
-export type PayoutEndReason = 'BALANCE_THRESHOLD' | 'TIMEOUT';
+export type PayoutEndReason = 'BALANCE_THRESHOLD' | 'TIMEOUT' | 'INACTIVITY';
 
 /**
  * Payload for payout session start event.

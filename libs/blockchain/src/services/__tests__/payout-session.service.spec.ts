@@ -42,6 +42,7 @@ function createMockPayoutConfig(): PayoutConfig {
   return {
     balanceThresholdUsdt: 1000, // 1000 USDT threshold
     timeoutMinutes: 30, // 30 minutes timeout
+    inactivityTimeoutMinutes: 60, // 60 minutes inactivity timeout
     checkIntervalMs: 60000, // 60 seconds check interval
   };
 }
@@ -930,6 +931,204 @@ describe('PayoutSessionService', () => {
         (call) => call[0] === PAYOUT_END_EVENT,
       );
       expect(endEventCall).toBeUndefined();
+    });
+  });
+
+  // ===========================================================================
+  // INACTIVITY timeout: Session ends after 60 min regardless of balance
+  // ===========================================================================
+  describe('INACTIVITY timeout: Session ends after 60 min regardless of balance', () => {
+    /**
+     * @category timeout
+     * @complexity medium
+     * @covers Inactivity timeout ends session regardless of balance change
+     */
+    it('should end session after inactivity timeout even if balance has NOT decreased', async () => {
+      const tx = createMockTransaction('inactivity-no-decrease-tx', {
+        timestamp: Date.now(),
+      });
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000'); // 5000 USDT start
+      await service.handleOutgoingTransaction(tx);
+
+      expect(service.isActive()).toBe(true);
+
+      // Advance past inactivity timeout (60 minutes)
+      jest.advanceTimersByTime(61 * 60 * 1000);
+
+      // Balance same (NOT decreased)
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+
+      await service.checkTimeout();
+
+      expect(service.isActive()).toBe(false);
+    });
+
+    /**
+     * @category timeout
+     * @complexity medium
+     * @covers Inactivity timeout emits INACTIVITY reason
+     */
+    it('should emit payout.end event with INACTIVITY reason', async () => {
+      const tx = createMockTransaction('inactivity-reason-tx', {
+        timestamp: Date.now(),
+      });
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+      await service.handleOutgoingTransaction(tx);
+
+      eventEmitter.emit.mockClear();
+
+      // Advance past inactivity timeout (60 minutes)
+      jest.advanceTimersByTime(61 * 60 * 1000);
+
+      // Balance same
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+
+      await service.checkTimeout();
+
+      const endEventCall = eventEmitter.emit.mock.calls.find(
+        (call) => call[0] === PAYOUT_END_EVENT,
+      );
+      expect(endEventCall).toBeDefined();
+
+      const payload = endEventCall?.[1] as PayoutEndEvent;
+      expect(payload.endReason).toBe('INACTIVITY');
+    });
+
+    /**
+     * @category timeout
+     * @complexity medium
+     * @covers Inactivity timeout ends session even if balance increased
+     */
+    it('should end session after inactivity timeout even if balance has INCREASED', async () => {
+      const tx = createMockTransaction('inactivity-increase-tx', {
+        timestamp: Date.now(),
+      });
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+      await service.handleOutgoingTransaction(tx);
+
+      // Advance past inactivity timeout (60 minutes)
+      jest.advanceTimersByTime(61 * 60 * 1000);
+
+      // Balance increased (incoming funds)
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('6000000000'); // 6000 USDT
+
+      await service.checkTimeout();
+
+      expect(service.isActive()).toBe(false);
+    });
+
+    /**
+     * @category timeout
+     * @complexity medium
+     * @covers Inactivity timeout includes correct duration
+     */
+    it('should include correct duration in payout.end event for inactivity timeout', async () => {
+      const tx = createMockTransaction('inactivity-duration-tx', {
+        timestamp: Date.now(),
+      });
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+      await service.handleOutgoingTransaction(tx);
+
+      eventEmitter.emit.mockClear();
+
+      // Advance 65 minutes
+      jest.advanceTimersByTime(65 * 60 * 1000);
+
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+
+      await service.checkTimeout();
+
+      const endEventCall = eventEmitter.emit.mock.calls.find(
+        (call) => call[0] === PAYOUT_END_EVENT,
+      );
+
+      const payload = endEventCall?.[1] as PayoutEndEvent;
+      expect(payload.durationMinutes).toBeGreaterThanOrEqual(65);
+    });
+
+    /**
+     * @category timeout
+     * @complexity medium
+     * @covers Regular timeout takes priority over inactivity when balance decreased
+     */
+    it('should end with TIMEOUT reason (not INACTIVITY) when balance decreased within 30-60 min', async () => {
+      const tx = createMockTransaction('timeout-priority-tx', {
+        timestamp: Date.now(),
+      });
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000'); // 5000 USDT start
+      await service.handleOutgoingTransaction(tx);
+
+      eventEmitter.emit.mockClear();
+
+      // Advance past regular timeout but before inactivity timeout (35 minutes)
+      jest.advanceTimersByTime(35 * 60 * 1000);
+
+      // Balance has decreased
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('4000000000'); // 4000 USDT
+
+      await service.checkTimeout();
+
+      const endEventCall = eventEmitter.emit.mock.calls.find(
+        (call) => call[0] === PAYOUT_END_EVENT,
+      );
+
+      const payload = endEventCall?.[1] as PayoutEndEvent;
+      expect(payload.endReason).toBe('TIMEOUT');
+    });
+
+    /**
+     * @category timeout
+     * @complexity medium
+     * @covers Session continues if within inactivity timeout and balance not decreased
+     */
+    it('should NOT end session before inactivity timeout if balance not decreased', async () => {
+      const tx = createMockTransaction('before-inactivity-tx', {
+        timestamp: Date.now(),
+      });
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+      await service.handleOutgoingTransaction(tx);
+
+      // Advance past regular timeout but before inactivity timeout (50 minutes)
+      jest.advanceTimersByTime(50 * 60 * 1000);
+
+      // Balance same
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+
+      await service.checkTimeout();
+
+      // Should still be active because we haven't reached inactivity timeout yet
+      expect(service.isActive()).toBe(true);
+    });
+
+    /**
+     * @category timeout
+     * @complexity medium
+     * @covers Balance threshold takes priority over inactivity timeout
+     */
+    it('should end with BALANCE_THRESHOLD reason (not INACTIVITY) when balance below threshold', async () => {
+      const tx = createMockTransaction('balance-priority-tx', {
+        timestamp: Date.now(),
+      });
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('5000000000');
+      await service.handleOutgoingTransaction(tx);
+
+      eventEmitter.emit.mockClear();
+
+      // Advance past inactivity timeout (65 minutes)
+      jest.advanceTimersByTime(65 * 60 * 1000);
+
+      // Balance below threshold
+      tronGridClient.getUSDTBalance.mockResolvedValueOnce('500000000'); // 500 USDT
+
+      await service.checkTimeout();
+
+      const endEventCall = eventEmitter.emit.mock.calls.find(
+        (call) => call[0] === PAYOUT_END_EVENT,
+      );
+
+      const payload = endEventCall?.[1] as PayoutEndEvent;
+      // Balance threshold is checked first, so it should take priority
+      expect(payload.endReason).toBe('BALANCE_THRESHOLD');
     });
   });
 
