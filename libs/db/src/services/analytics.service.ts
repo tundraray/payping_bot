@@ -134,14 +134,14 @@ export class AnalyticsService {
 
       // Step 4: Update wallet if classification changed
       if (classificationResult.changed) {
-        await this.recipientWalletsService.updateClassification(
-          toAddress,
-          classificationResult.classification,
-        );
-
-        // Handle rehire case
+        // Handle rehire case (markAsRehired also sets classification)
         if (classificationResult.previousClassification === 'FIRED') {
           await this.recipientWalletsService.markAsRehired(toAddress, tx.amount);
+        } else {
+          await this.recipientWalletsService.updateClassification(
+            toAddress,
+            classificationResult.classification,
+          );
         }
       }
 
@@ -178,16 +178,6 @@ export class AnalyticsService {
       );
 
       const processingTimeMs = Date.now() - startTime;
-
-      this.logger.log('Transaction processed for analytics', {
-        txHash: tx.hash,
-        toAddress,
-        classification: classificationResult.classification,
-        classificationChanged: classificationResult.changed,
-        salaryChangeDetected: !!salaryChange,
-        position,
-        processingTimeMs,
-      });
 
       return {
         walletAddress: toAddress,

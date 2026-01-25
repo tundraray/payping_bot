@@ -1,0 +1,39 @@
+services:
+  # PayPing Bot Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: payping_bot
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Database (Supabase)
+      DATABASE_URL: ${DATABASE_URL}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_RUN_MIGRATIONS: ${DB_RUN_MIGRATIONS:-true}
+
+      # TronGrid API
+      TRONGRID_BASE_URL: ${TRONGRID_BASE_URL:-https://api.trongrid.io}
+      TRONGRID_API_KEY: ${TRONGRID_API_KEY}
+      TRONGRID_TIMEOUT_MS: ${TRONGRID_TIMEOUT_MS:-10000}
+
+      # Polling
+      POLLING_INTERVAL_MS: ${POLLING_INTERVAL_MS:-5000}
+      POLLING_ENABLED: ${POLLING_ENABLED:-true}
+      POLLING_FALLBACK_WINDOW_MS: ${POLLING_FALLBACK_WINDOW_MS:-60000}
+
+      # Cache
+      LRU_CACHE_SIZE: ${LRU_CACHE_SIZE:-10000}
+      LRU_CACHE_TTL_MS: ${LRU_CACHE_TTL_MS:-3600000}
+
+      # Wallet
+      MONITORED_WALLET_ADDRESS: ${MONITORED_WALLET_ADDRESS}
+      USDT_CONTRACT_ADDRESS: ${USDT_CONTRACT_ADDRESS:-TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t}
+
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_ADMIN_ID: ${TELEGRAM_ADMIN_ID:-}
+    env_file:
+      - .env
