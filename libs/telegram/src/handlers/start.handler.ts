@@ -29,6 +29,7 @@ export class StartHandler implements OnModuleInit {
   /**
    * Handle /start command.
    * Shows welcome message, subscription status, and inline buttons.
+   * Sets up bot menu commands based on subscription status.
    */
   async handleStart(ctx: BotContext): Promise<void> {
     const telegramId = ctx.from?.id;
@@ -57,6 +58,9 @@ export class StartHandler implements OnModuleInit {
       // Check subscription status
       const subscription = await this.subscriptionsService.getActive(user.id);
       const isSubscribed = !!subscription;
+
+      // Set up bot menu commands based on subscription status
+      await this.setUserMenuCommands(ctx, isSubscribed);
 
       // Fetch analytics data
       const now = new Date();
@@ -153,7 +157,12 @@ export class StartHandler implements OnModuleInit {
     lines.push('');
 
     // Subscription status
-    lines.push(isSubscribed ? ctx.t('status-subscribed') : ctx.t('status-not-subscribed'));
+    if (isSubscribed) {
+      lines.push(ctx.t('status-subscribed'));
+    } else {
+      lines.push(ctx.t('status-not-subscribed'));
+      lines.push(ctx.t('subscribe-for-analytics'));
+    }
 
     return lines.join('\n');
   }
@@ -171,5 +180,34 @@ export class StartHandler implements OnModuleInit {
     }
 
     return keyboard;
+  }
+
+  /**
+   * Set bot menu commands for the user based on subscription status.
+   * /start is always available, /analytics only for subscribers.
+   */
+  private async setUserMenuCommands(ctx: BotContext, isSubscribed: boolean): Promise<void> {
+    try {
+      const commands = [{ command: 'start', description: ctx.t('menu-start') }];
+
+      // Add /analytics command only for subscribers
+      if (isSubscribed) {
+        commands.push({ command: 'analytics', description: ctx.t('menu-analytics') });
+      }
+
+      // Set commands for this specific user's chat
+      await ctx.api.setMyCommands(commands, {
+        scope: { type: 'chat', chat_id: ctx.chat?.id ?? ctx.from?.id ?? 0 },
+      });
+
+      this.logger.debug('Menu commands set for user', {
+        telegramId: ctx.from?.id,
+        isSubscribed,
+        commandCount: commands.length,
+      });
+    } catch (error) {
+      // Non-critical error - log and continue
+      this.logger.warn('Failed to set menu commands', { error });
+    }
   }
 }

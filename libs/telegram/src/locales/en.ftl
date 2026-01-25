@@ -53,6 +53,13 @@ status-not-subscribed = 🔔 Not subscribed
 btn-subscribe = Subscribe
 btn-unsubscribe = Unsubscribe
 
+# Menu command descriptions
+menu-start = Start the bot
+menu-analytics = View payout analytics
+
+# Subscribe prompt
+subscribe-for-analytics = 📊 Subscribe to get access to detailed payout analytics!
+
 # Errors
 error-generic = ⚠️ Something went wrong. Please try again.
 error-rate-limit = ⏳ Too many requests. Please wait a moment.

@@ -53,6 +53,13 @@ status-not-subscribed = 🔔 Не підписані
 btn-subscribe = Підписатись
 btn-unsubscribe = Відписатись
 
+# Описи команд меню
+menu-start = Запустити бота
+menu-analytics = Аналітика виплат
+
+# Заклик підписатись
+subscribe-for-analytics = 📊 Підпишись, щоб отримати доступ до детальної аналітики виплат!
+
 # Помилки
 error-generic = ⚠️ Щось пішло не так. Спробуйте ще раз.
 error-rate-limit = ⏳ Забагато запитів. Зачекайте трохи.
