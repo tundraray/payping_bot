@@ -104,7 +104,7 @@ export class AnalyticsService {
 
     try {
       // IDEMPOTENCY: Check if this transaction was already processed
-      // Look for existing monthly position with this exact transaction hash
+      // Look for existing monthly position that contains this txHash in processedTransactionHashes array
       const wallet = await this.recipientWalletsService.findByAddress(toAddress);
       if (wallet) {
         const [existingPosition] = await this.db
@@ -114,18 +114,21 @@ export class AnalyticsService {
             and(
               eq(monthlyPositions.recipientWalletId, wallet.id),
               eq(monthlyPositions.yearMonth, yearMonth),
-              eq(monthlyPositions.transactionHash, tx.hash),
             ),
           )
           .limit(1);
 
         if (existingPosition) {
-          // Transaction already processed - return null to indicate no-op
-          this.logger.debug('Transaction already processed, skipping', {
-            txHash: tx.hash,
-            toAddress,
-          });
-          return null;
+          // Check if this txHash is already in the processedTransactionHashes array
+          const processedHashes = existingPosition.processedTransactionHashes ?? [];
+          if (processedHashes.includes(tx.hash)) {
+            // Transaction already processed - return null to indicate no-op
+            this.logger.debug('Transaction already processed, skipping', {
+              txHash: tx.hash,
+              toAddress,
+            });
+            return null;
+          }
         }
       }
 
@@ -695,24 +698,26 @@ export class AnalyticsService {
       .limit(1);
 
     if (existing) {
-      // IDEMPOTENCY: Check if this exact transaction was already processed
-      // The transactionHash field stores the FIRST transaction hash for this position,
-      // but we need to check if current txHash was already counted to prevent duplicates.
-      // For simplicity, we track processed hashes in the existing hash or skip if same hash.
-      if (existing.transactionHash === txHash) {
+      // IDEMPOTENCY: Check if this txHash is already in processedTransactionHashes
+      const processedHashes = existing.processedTransactionHashes ?? [];
+      if (processedHashes.includes(txHash)) {
         // Same transaction being processed again - skip to prevent double-counting
         return existing.position;
       }
 
-      // Different transaction in same month - accumulate amount (this is correct behavior)
+      // Different transaction in same month - accumulate amount and add hash to array
       const currentAmount = Number.parseFloat(existing.amount);
       const newAmount = Number.parseFloat(amount);
       const totalAmount = (currentAmount + newAmount).toString();
+
+      // Add txHash to the processedTransactionHashes array
+      const updatedHashes = [...processedHashes, txHash];
 
       await this.db
         .update(monthlyPositions)
         .set({
           amount: totalAmount,
+          processedTransactionHashes: updatedHashes,
           updatedAt: new Date(),
         })
         .where(eq(monthlyPositions.id, existing.id));
@@ -729,7 +734,7 @@ export class AnalyticsService {
     const maxPos = maxPosResult[0]?.maxPos ?? 0;
     const newPosition = maxPos + 1;
 
-    // Insert new position
+    // Insert new position with txHash in processedTransactionHashes array
     await this.db.insert(monthlyPositions).values({
       recipientWalletId: walletId,
       yearMonth,
@@ -737,6 +742,7 @@ export class AnalyticsService {
       transactionHash: txHash,
       amount,
       paymentTimestamp: timestamp,
+      processedTransactionHashes: [txHash], // Initialize with first hash
     });
 
     return newPosition;

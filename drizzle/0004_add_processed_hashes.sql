@@ -1,0 +1,1 @@
+ALTER TABLE "monthly_positions" ADD COLUMN "processed_transaction_hashes" jsonb DEFAULT '[]'::jsonb;

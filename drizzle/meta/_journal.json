@@ -29,6 +29,13 @@
       "when": 1769162627756,
       "tag": "0003_new_norman_osborn",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1769385481887,
+      "tag": "0004_add_processed_hashes",
+      "breakpoints": true
     }
   ]
 }
