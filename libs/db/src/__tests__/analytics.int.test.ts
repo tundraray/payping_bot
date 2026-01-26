@@ -340,8 +340,9 @@ describe('Analytics Integration Tests', () => {
         const result = await analyticsService.processTransaction(tx2);
 
         // Assert: Classification changed to EMPLOYEE
-        expect(result.classificationChanged).toBe(true);
-        expect(result.classification).toBe('EMPLOYEE');
+        expect(result).not.toBeNull();
+        expect(result!.classificationChanged).toBe(true);
+        expect(result!.classification).toBe('EMPLOYEE');
 
         wallet = await recipientWalletsService.findByAddress(recipient);
         expect(wallet?.classification).toBe('EMPLOYEE');
@@ -378,8 +379,9 @@ describe('Analytics Integration Tests', () => {
       const result = await analyticsService.processTransaction(tx2);
 
       // Assert
-      expect(result.classificationChanged).toBe(true);
-      expect(result.classification).toBe('FREELANCER');
+      expect(result).not.toBeNull();
+      expect(result!.classificationChanged).toBe(true);
+      expect(result!.classification).toBe('FREELANCER');
     });
   });
 
@@ -559,8 +561,9 @@ describe('Analytics Integration Tests', () => {
       const result = await analyticsService.processTransaction(tx);
 
       // Assert: Reclassified as EMPLOYEE
-      expect(result.classificationChanged).toBe(true);
-      expect(result.classification).toBe('EMPLOYEE');
+      expect(result).not.toBeNull();
+      expect(result!.classificationChanged).toBe(true);
+      expect(result!.classification).toBe('EMPLOYEE');
 
       wallet = await recipientWalletsService.findByAddress(recipient);
       expect(wallet?.classification).toBe('EMPLOYEE');

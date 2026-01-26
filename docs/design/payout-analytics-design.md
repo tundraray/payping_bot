@@ -515,7 +515,7 @@ export const recipientWallets = pgTable('recipient_wallets', {
 });
 
 // libs/db/src/schema/monthly-positions.ts
-import { bigint, integer, pgTable, timestamp, unique, varchar } from 'drizzle-orm/pg-core';
+import { bigint, integer, jsonb, pgTable, timestamp, unique, varchar } from 'drizzle-orm/pg-core';
 import { recipientWallets, classificationEnum } from './recipient-wallets';
 
 export const monthlyPositions = pgTable('monthly_positions', {
@@ -524,9 +524,12 @@ export const monthlyPositions = pgTable('monthly_positions', {
   yearMonth: varchar('year_month', { length: 7 }).notNull(), // '2026-01'
   classification: classificationEnum('classification').notNull(), // Classification at time of payment
   position: integer('position').notNull(), // Position within classification group
-  transactionHash: varchar('transaction_hash', { length: 64 }).notNull(),
+  transactionHash: varchar('transaction_hash', { length: 64 }).notNull(), // First tx hash (legacy)
   amount: varchar('amount', { length: 78 }).notNull(), // Cumulative amount
   paymentTimestamp: bigint('payment_timestamp', { mode: 'number' }).notNull(),
+  // IDEMPOTENCY: JSON array of all processed tx hashes for this wallet/month
+  // Handles multiple payments per month without double-counting
+  processedTransactionHashes: jsonb('processed_transaction_hashes').$type<string[]>().default([]),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdateFn(() => new Date()),
 }, (table) => [
@@ -614,8 +617,9 @@ Input:
   Validation: Transaction type check, address format
 
 Output:
-  Type: void
+  Type: ProcessingResult | null
   Guarantees:
+    - Returns null if transaction was already processed (idempotent)
     - Recipient wallet created or updated
     - Classification evaluated and updated if changed
     - Monthly position calculated and stored
@@ -625,6 +629,35 @@ Output:
 Invariants:
   - Processing completes within 200ms
   - Position numbers are sequential within classification group
+  - IDEMPOTENT: Same transaction processed twice returns null on second call
+```
+
+#### Backfill Idempotency
+
+The backfill mechanism ensures consistent analytics data regardless of how many times it runs:
+
+1. **Clean Slate Approach**: `backfillAnalytics()` clears all computed data before processing:
+   - Truncates `monthly_positions` table
+   - Resets `total_payments` to 0 for all `recipient_wallets`
+
+2. **Transaction-Level Idempotency**: Each transaction is tracked via `processedTransactionHashes` JSONB array:
+   - Stores all processed tx hashes for a wallet/month combination
+   - Handles multiple payments to same wallet in same month
+   - Prevents double-counting if same tx is processed twice
+
+```typescript
+// Check if tx already processed
+const processedHashes = existingPosition.processedTransactionHashes ?? [];
+if (processedHashes.includes(tx.hash)) {
+  return null; // Skip - already processed
+}
+
+// Add hash to array when processing
+const updatedHashes = [...processedHashes, txHash];
+await db.update(monthlyPositions).set({
+  amount: totalAmount,
+  processedTransactionHashes: updatedHashes,
+});
 ```
 
 #### AnalyticsService.getGroupedAnalytics()

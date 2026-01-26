@@ -725,8 +725,9 @@ describe('Classification Regularity Integration Tests', () => {
         // Act: Process transaction via analytics service
         const result = await analyticsService.processTransaction(tx);
 
-        // Assert
-        expect(result.classification).toBe('UNKNOWN');
+        // Assert (result should not be null for new transaction)
+        expect(result).not.toBeNull();
+        expect(result!.classification).toBe('UNKNOWN');
 
         // Verify wallet in DB
         const wallet = await recipientWalletsService.findByAddress(walletAddress);
@@ -773,9 +774,10 @@ describe('Classification Regularity Integration Tests', () => {
       // Act: Process transaction
       const result = await analyticsService.processTransaction(tx);
 
-      // Assert
-      expect(result.classification).toBe('ONE_TIME');
-      expect(result.classificationChanged).toBe(true);
+      // Assert (result should not be null for new transaction)
+      expect(result).not.toBeNull();
+      expect(result!.classification).toBe('ONE_TIME');
+      expect(result!.classificationChanged).toBe(true);
 
       // Verify wallet in DB
       const wallet = await recipientWalletsService.findByAddress(walletAddress);
