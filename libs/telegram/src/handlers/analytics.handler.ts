@@ -336,7 +336,8 @@ export class AnalyticsHandler implements OnModuleInit {
     let messageCount = 0;
 
     const monthName = this.getMonthName(ctx, yearMonth);
-    const comparisonMonthName = this.getMonthName(ctx, previousMonth);
+    // TODO: Uncomment when navigation keyboard is enabled
+    // const comparisonMonthName = this.getMonthName(ctx, previousMonth);
 
     // Fetch salary changes for the current month (only for employees)
     const salaryChanges = await this.analyticsService.getSalaryChangesForMonth(yearMonth);
@@ -364,6 +365,8 @@ export class AnalyticsHandler implements OnModuleInit {
       messageCount++;
     }
 
+    // TODO: Uncomment when ready, also unskip test "should handle fired employees in results" in analytics.handler.spec.ts
+    /*
     // Send one-time message
     if (analytics.oneTime.length > 0) {
       await this.sendGroupMessage(ctx, 'analytics-onetime-header', analytics.oneTime, monthName);
@@ -383,11 +386,13 @@ export class AnalyticsHandler implements OnModuleInit {
     }
 
     // Send navigation keyboard on last message
+    
     const keyboard = this.buildNavigationKeyboard(ctx, yearMonth);
     await ctx.reply(ctx.t('analytics-changes-from', { previousMonth: comparisonMonthName }), {
       parse_mode: 'HTML',
       reply_markup: keyboard,
     });
+    */
 
     return messageCount;
   }
@@ -485,6 +490,7 @@ export class AnalyticsHandler implements OnModuleInit {
   /**
    * Send a message for fired/terminated wallets.
    */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: temporarily unused, will be enabled later
   private async sendFiredMessage(
     ctx: BotContext,
     fired: FiredEmployeeResult[],
@@ -564,6 +570,7 @@ export class AnalyticsHandler implements OnModuleInit {
    * @see AC-8.3: Disable Previous at 6-month boundary
    * @see AC-8.4: Disable Next at current month
    */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: temporarily unused, will be enabled later
   private buildNavigationKeyboard(ctx: BotContext, currentMonth: string): InlineKeyboard {
     const keyboard = new InlineKeyboard();
 
