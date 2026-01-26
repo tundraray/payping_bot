@@ -13,6 +13,30 @@ import { CALLBACK_ACTIONS } from '../types/telegram.types';
 import { formatUsdtDisplay, truncateWalletForAnalytics } from '../utils';
 
 /**
+ * Telegram message character limit.
+ * @see https://core.telegram.org/bots/api#sendmessage
+ */
+const TELEGRAM_MESSAGE_LIMIT = 4096;
+
+/**
+ * Reserved characters for header, footer, and HTML tags.
+ * Header: ~100 chars, Footer: ~50 chars, HTML tags: ~50 chars
+ */
+const RESERVED_CHARS = 250;
+
+/**
+ * Approximate characters per table row (including newline).
+ * Based on: "  1 | TXyz...Wah |   58 |    ↑ |       3,500.00\n" = ~55 chars
+ * Plus buffer for salary change percentage = ~70 chars max
+ */
+const CHARS_PER_ROW = 70;
+
+/**
+ * Maximum rows per message to stay under Telegram limit.
+ */
+const MAX_ROWS_PER_MESSAGE = Math.floor((TELEGRAM_MESSAGE_LIMIT - RESERVED_CHARS) / CHARS_PER_ROW);
+
+/**
  * Month name keys for i18n lookup.
  */
 const MONTH_KEYS = [
@@ -399,6 +423,7 @@ export class AnalyticsHandler implements OnModuleInit {
 
   /**
    * Send a message for a classification group.
+   * Splits into multiple messages if entries exceed Telegram message limit.
    *
    * Displays:
    * - Position, Wallet, Amount (with salary change for employees), Prev position, Change indicator
@@ -415,12 +440,73 @@ export class AnalyticsHandler implements OnModuleInit {
     monthName: string,
     salaryChanges?: Map<string, SalaryChangeInfo>,
   ): Promise<void> {
+    // Calculate total amount across all entries
+    let totalAmount = BigInt(0);
+    for (const entry of entries) {
+      const amountForTotal =
+        entry.positionChange !== 'miss' ? entry.amount : (entry.previousAmount ?? '0');
+      totalAmount += BigInt(amountForTotal);
+    }
+
+    // Split entries into chunks that fit within Telegram message limit
+    const chunks = this.chunkArray(entries, MAX_ROWS_PER_MESSAGE);
+    const totalChunks = chunks.length;
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      const chunk = chunks[chunkIndex];
+      const isFirstChunk = chunkIndex === 0;
+      const isLastChunk = chunkIndex === chunks.length - 1;
+
+      const message = this.formatGroupMessageChunk(
+        ctx,
+        headerKey,
+        chunk,
+        monthName,
+        salaryChanges,
+        entries.length,
+        totalAmount,
+        isFirstChunk,
+        isLastChunk,
+        chunkIndex + 1,
+        totalChunks,
+      );
+
+      await ctx.reply(message, { parse_mode: 'HTML' });
+    }
+  }
+
+  /**
+   * Format a single chunk of the group message.
+   */
+  private formatGroupMessageChunk(
+    ctx: BotContext,
+    headerKey: string,
+    entries: DbAnalyticsResult[],
+    monthName: string,
+    salaryChanges: Map<string, SalaryChangeInfo> | undefined,
+    totalCount: number,
+    totalAmount: bigint,
+    isFirstChunk: boolean,
+    isLastChunk: boolean,
+    chunkNumber: number,
+    totalChunks: number,
+  ): string {
     const lines: string[] = [];
 
-    // Header
-    lines.push(ctx.t(headerKey, { count: entries.length.toString() }));
-    lines.push(`${monthName}`);
-    lines.push('');
+    // Header (only on first chunk)
+    if (isFirstChunk) {
+      lines.push(ctx.t(headerKey, { count: totalCount.toString() }));
+      lines.push(`${monthName}`);
+      if (totalChunks > 1) {
+        lines.push(`(${chunkNumber}/${totalChunks})`);
+      }
+      lines.push('');
+    } else {
+      // Continuation header for subsequent chunks
+      lines.push(ctx.t(headerKey, { count: totalCount.toString() }));
+      lines.push(`(${chunkNumber}/${totalChunks})`);
+      lines.push('');
+    }
 
     // Column widths
     const COL_POS = 3; // " XX"
@@ -439,7 +525,6 @@ export class AnalyticsHandler implements OnModuleInit {
     );
 
     // Table rows
-    let totalAmount = BigInt(0);
     for (const entry of entries) {
       const posIndicator = this.getPositionIndicator(ctx, entry.positionChange);
       const prevPos = entry.previousPosition !== null ? entry.previousPosition.toString() : '-';
@@ -468,23 +553,29 @@ export class AnalyticsHandler implements OnModuleInit {
       lines.push(
         `${entry.position.toString().padStart(COL_POS)} | ${truncatedWallet.padEnd(COL_WALLET)} | ${prevPos.padStart(COL_PREV)} | ${posIndicator.padStart(COL_CHG)} | ${amountCell.padStart(COL_AMOUNT)}`,
       );
-
-      // Total = sum of amounts (use current month amount if available, else previous)
-      const amountForTotal =
-        entry.positionChange !== 'miss' ? entry.amount : (entry.previousAmount ?? '0');
-      totalAmount += BigInt(amountForTotal);
     }
 
     lines.push('</pre>');
-    lines.push('');
 
-    // Total
-    const totalFormatted = formatUsdtDisplay(totalAmount.toString());
-    lines.push(ctx.t('analytics-total', { amount: totalFormatted }));
+    // Total (only on last chunk)
+    if (isLastChunk) {
+      lines.push('');
+      const totalFormatted = formatUsdtDisplay(totalAmount.toString());
+      lines.push(ctx.t('analytics-total', { amount: totalFormatted }));
+    }
 
-    const message = lines.join('\n');
+    return lines.join('\n');
+  }
 
-    await ctx.reply(message, { parse_mode: 'HTML' });
+  /**
+   * Split an array into chunks of specified size.
+   */
+  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
   }
 
   /**
