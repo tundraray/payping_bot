@@ -562,6 +562,47 @@ export class AnalyticsService {
   }
 
   /**
+   * Get all unique yearMonth values from monthly_positions.
+   * Used to recalculate positions after backfill.
+   */
+  private async getDistinctYearMonths(): Promise<string[]> {
+    const results = await this.db
+      .selectDistinct({
+        yearMonth: monthlyPositions.yearMonth,
+      })
+      .from(monthlyPositions);
+
+    return results.map((r) => r.yearMonth);
+  }
+
+  /**
+   * Recalculate positions for all recipients in a month.
+   * Positions are global across all classifications, ordered by paymentTimestamp.
+   * @param yearMonth - Month in YYYY-MM format
+   */
+  async recalculatePositionsForMonth(yearMonth: string): Promise<void> {
+    // Get all positions for the month, ordered by timestamp then hash
+    const positions = await this.db
+      .select({
+        id: monthlyPositions.id,
+        paymentTimestamp: monthlyPositions.paymentTimestamp,
+        transactionHash: monthlyPositions.transactionHash,
+      })
+      .from(monthlyPositions)
+      .where(eq(monthlyPositions.yearMonth, yearMonth))
+      .orderBy(asc(monthlyPositions.paymentTimestamp), asc(monthlyPositions.transactionHash));
+
+    // Update positions in correct order
+    for (let i = 0; i < positions.length; i++) {
+      const newPosition = i + 1;
+      await this.db
+        .update(monthlyPositions)
+        .set({ position: newPosition, updatedAt: new Date() })
+        .where(eq(monthlyPositions.id, positions[i].id));
+    }
+  }
+
+  /**
    * Get payments for a wallet address.
    *
    * @param address - Wallet address
@@ -742,7 +783,7 @@ export class AnalyticsService {
       transactionHash: txHash,
       amount,
       paymentTimestamp: timestamp,
-      processedTransactionHashes: [txHash], // Initialize with first hash
+      processedTransactionHashes: [txHash],
     });
 
     return newPosition;
@@ -798,9 +839,10 @@ export class AnalyticsService {
    * - Process wallets in parallel (up to BACKFILL_CONCURRENCY)
    * - Within each wallet, process transactions sequentially (preserves order)
    *
+   * @param signal Optional AbortSignal for graceful cancellation during shutdown
    * @returns Number of transactions processed
    */
-  async backfillAnalytics(): Promise<number> {
+  async backfillAnalytics(signal?: AbortSignal): Promise<number> {
     const monitoredWallet = await this.getMonitoredWalletAddress();
     if (!monitoredWallet) {
       this.logger.warn('No monitored wallet configured, cannot backfill');
@@ -844,10 +886,18 @@ export class AnalyticsService {
 
     // Process in batches of BACKFILL_CONCURRENCY
     for (let i = 0; i < walletGroups.length; i += AnalyticsService.BACKFILL_CONCURRENCY) {
+      // Check for abort signal before processing each batch
+      if (signal?.aborted) {
+        this.logger.log(
+          `Backfill cancelled at ${walletsCompleted}/${txsByWallet.size} wallets, ${totalProcessed} txs processed`,
+        );
+        return totalProcessed;
+      }
+
       const batch = walletGroups.slice(i, i + AnalyticsService.BACKFILL_CONCURRENCY);
 
       const results = await Promise.all(
-        batch.map((walletTxs) => this.processWalletTransactions(walletTxs)),
+        batch.map((walletTxs) => this.processWalletTransactions(walletTxs, signal)),
       );
 
       totalProcessed += results.reduce((sum, count) => sum + count, 0);
@@ -861,11 +911,28 @@ export class AnalyticsService {
     this.logger.log(
       `Backfill completed: ${totalProcessed}/${outgoingTxs.length} transactions processed`,
     );
+
+    // Recalculate positions in correct chronological order
+    // This fixes race conditions from parallel wallet processing
+    if (signal?.aborted) {
+      this.logger.log('Backfill cancelled, skipping position recalculation');
+      return totalProcessed;
+    }
+
+    this.logger.log('Starting position recalculation phase...');
+    const distinctMonths = await this.getDistinctYearMonths();
+    await Promise.all(
+      distinctMonths.map((yearMonth) => this.recalculatePositionsForMonth(yearMonth)),
+    );
+    this.logger.log(`Position recalculation completed for ${distinctMonths.length} months`);
+
     return totalProcessed;
   }
 
   /**
    * Process all transactions for a single wallet sequentially.
+   * @param txs Array of transactions to process
+   * @param signal Optional AbortSignal for graceful cancellation
    * @returns Number of successfully processed transactions (excludes skipped duplicates)
    */
   private async processWalletTransactions(
@@ -880,10 +947,16 @@ export class AnalyticsService {
       contractAddress: string | null;
       raw: unknown;
     }>,
+    signal?: AbortSignal,
   ): Promise<number> {
     let processed = 0;
 
     for (const tx of txs) {
+      // Check for abort signal before processing each transaction
+      if (signal?.aborted) {
+        return processed;
+      }
+
       try {
         const result = await this.processTransaction({
           hash: tx.hash,
@@ -901,6 +974,10 @@ export class AnalyticsService {
           processed++;
         }
       } catch (error) {
+        // On abort, don't log error - just return
+        if (signal?.aborted) {
+          return processed;
+        }
         this.logger.error('Failed to process transaction during backfill', {
           hash: tx.hash,
           error,
