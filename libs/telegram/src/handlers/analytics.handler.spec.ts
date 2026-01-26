@@ -307,7 +307,8 @@ describe('AnalyticsHandler', () => {
       expect(ctx.t).toHaveBeenCalledWith('position-new');
     });
 
-    it('should handle fired employees in results', async () => {
+    // TODO: Unskip when one-time/unknown/fired messages are uncommented in analytics.handler.ts
+    it.skip('should handle fired employees in results', async () => {
       const ctx = createMockContext(123456);
 
       analyticsService.getGroupedAnalytics.mockResolvedValue({

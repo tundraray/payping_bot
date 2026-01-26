@@ -95,9 +95,6 @@ export class TronGridClient {
       }
     } while (fingerprint);
 
-    this.logger.log(
-      `Fetched ${allTransactions.length} total transactions across ${pageCount} page(s)`,
-    );
     return allTransactions;
   }
 
